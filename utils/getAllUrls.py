@@ -85,8 +85,10 @@ from tqdm import tqdm
 import datetime
 import os
 
+TIMEOUT = 10  # 请求超时秒数
 
-def getAllUrl(page_num, start_page, fad, tok, headers):                             # pages
+
+def getAllUrl(page_num, start_page, fad, tok, headers, delay_range=(1, 2), retries=1, timeout=TIMEOUT):                             # pages
     url = 'https://mp.weixin.qq.com/cgi-bin/appmsg'
     title = []
     link = []
@@ -95,20 +97,36 @@ def getAllUrl(page_num, start_page, fad, tok, headers):                         
         for i in range(page_num):
             data = {
                 'action': 'list_ex',
-                'begin': start_page + i*5,       #页数
+                'begin': start_page + i*5,  # 页数
                 'count': '5',
                 'fakeid': fad,
                 'type': '9',
-                'query':'' ,
+                'query': '',
                 'token': tok,
                 'lang': 'zh_CN',
                 'f': 'json',
                 'ajax': '1',
             }
-            time.sleep(random.randint(1, 2))
-            r = requests.get(url, headers=headers, params=data)
+            time.sleep(random.uniform(*delay_range))
+            resp_json = None
+            for _ in range(max(1, retries)):
+                try:
+                    r = requests.get(url, headers=headers, params=data, timeout=timeout)
+                    r.raise_for_status()
+                    resp_json = r.json()
+                    break
+                except requests.RequestException as exc:
+                    resp_json = None
+                    print(f"[error] request page {i} failed: {exc}")
+                    time.sleep(random.uniform(*delay_range))
+            if resp_json is None:
+                break
             # 解析json
-            dic = r.json()
+            dic = resp_json
+            if dic.get("base_resp", {}).get("ret") not in (0, None):
+                print(
+                    f"[warn] wechat returned error ret={dic['base_resp']['ret']}, msg={dic['base_resp'].get('err_msg')}")
+                break
             for i in dic['app_msg_list']:     # 遍历dic['app_msg_list']中所有内容
                 # 按照键值对的方式选择
                 title.append(i['title'])      # get title value
@@ -118,13 +136,15 @@ def getAllUrl(page_num, start_page, fad, tok, headers):                         
 
     return title, link, update_time
 
-def write2csv(path, filename, data_list, eType:str):
+
+def write2csv(path, filename, data_list, eType: str):
     mkdir(path=path)
     with open(path + '/' + filename + '_' + eType + '.csv', 'w', newline='', encoding="utf-8-sig") as csvfile:
         writer = csv.writer(csvfile)
         for row in data_list:
             writer.writerow([row])
     print(f"[save {eType} list] {str(datetime.datetime.now())} done")
+
 
 def mkdir(path):
     '''
@@ -146,7 +166,7 @@ def mkdir(path):
     # 判断结果
     if not isExists:
         # 如果不存在则创建目录
-         # 创建目录操作函数
+        # 创建目录操作函数
         os.makedirs(path)
         print(path + ' 创建成功')
         return True
@@ -154,6 +174,7 @@ def mkdir(path):
         # 如果目录存在则不创建，并提示目录已存在
         print(path + ' 目录已存在')
         return False
+
 
 def run_getAllUrls(page_start, page_num, save_path, fad, tok, headers, filename):
     mkdir(save_path + '/raw')
@@ -165,4 +186,3 @@ def run_getAllUrls(page_start, page_num, save_path, fad, tok, headers, filename)
     write2csv(save_path, filename, update_time, eType="update-time")
     end = time.time()
     print("time cost:", end - start, "s")
-

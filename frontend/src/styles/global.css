@@ -1,0 +1,15 @@
+body {
+  margin: 0;
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  background: #f4f6fb;
+  color: #1f2d3d;
+}
+
+a {
+  color: #409eff;
+}
+
+.ant-menu {
+  border-inline-end: none !important;
+}
+
