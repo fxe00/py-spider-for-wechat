@@ -3,6 +3,7 @@ from bson import ObjectId
 
 from backend.db import get_db
 from backend.security import jwt_required
+import time
 
 bp = Blueprint("mp_accounts", __name__, url_prefix="/api/mp-accounts")
 
@@ -39,7 +40,13 @@ def create_account():
     remark = (body.get("remark") or "").strip()
     if not name or not token or not cookie:
         return jsonify({"message": "name/token/cookie 必填"}), 400
-    payload = {"name": name, "token": token, "cookie": cookie, "remark": remark, "updated_at": body.get("updated_at")}
+    payload = {
+        "name": name,
+        "token": token,
+        "cookie": cookie,
+        "remark": remark,
+        "updated_at": body.get("updated_at") or time.time(),
+    }
     result = get_db()["mp_accounts"].insert_one(payload)
     payload["_id"] = result.inserted_id
     return jsonify(_serialize(payload)), 201

@@ -13,8 +13,8 @@
           <el-button round size="small" @click="logout">退出</el-button>
         </div>
       </el-header>
-      <el-container>
-        <el-aside width="210px" class="aside">
+      <el-container class="page-container">
+        <el-aside width="220px" class="aside">
           <a-menu mode="inline" v-model:selectedKeys="menuKeys" @select="onSelect">
             <a-menu-item key="config">
               <template #icon><SettingOutlined /></template>
@@ -30,119 +30,157 @@
             </a-menu-item>
           </a-menu>
         </el-aside>
-        <el-main>
-          <el-card shadow="hover">
+        <el-main class="main-shell">
+          <el-card shadow="hover" class="card-shell">
             <div class="content">
               <div class="main">
                 <template v-if="activeTab === 'config'">
-                  <el-row :gutter="16">
-                    <el-col :span="12">
-                      <el-card>
-                        <div class="card-title">
-                          账号配置
-                          <el-input
-                            v-model="accountQuery"
-                            size="small"
-                            placeholder="模糊搜索名称"
-                            style="width: 200px; margin-left: 10px"
-                            @keyup.enter="fetchAccounts"
-                          />
-                        </div>
-                        <el-space>
-                          <el-button size="small" type="primary" @click="fetchAccounts" :loading="loading.accounts">刷新</el-button>
-                          <el-button size="small" @click="openAccountDialog()">新增账号</el-button>
-                        </el-space>
-                        <el-table :data="accounts" style="width: 100%; margin-top: 10px" size="small">
-                          <el-table-column prop="name" label="名称" />
-                          <el-table-column label="更新时间">
-                            <template #default="scope">{{ formatTime(scope.row.updated_at) }}</template>
-                          </el-table-column>
-                          <el-table-column label="操作" width="180">
-                            <template #default="scope">
-                              <el-button size="small" @click="openAccountDialog(scope.row)">编辑</el-button>
-                              <el-button size="small" type="danger" @click="removeAccount(scope.row)">删除</el-button>
-                            </template>
-                          </el-table-column>
-                        </el-table>
-                      </el-card>
-                    </el-col>
-                    <el-col :span="12">
-                      <el-card>
-                        <div class="card-title">
-                          公众号配置
-                          <el-input
-                            v-model="targetQuery"
-                            size="small"
-                            placeholder="模糊搜索名称"
-                            style="width: 200px; margin-left: 10px"
-                            @keyup.enter="fetchTargets"
-                          />
-                        </div>
-                        <el-space>
-                          <el-button size="small" type="primary" @click="fetchTargets" :loading="loading.targets">刷新</el-button>
-                          <el-button size="small" @click="openTargetDialog()">新增公众号</el-button>
-                        </el-space>
-                        <el-table :data="targets" style="width: 100%; margin-top: 10px" size="small">
-                          <el-table-column prop="name" label="名称" />
-                          <el-table-column label="调度">
-                            <template #default="scope">{{ renderSchedule(scope.row) }}</template>
-                          </el-table-column>
-                          <el-table-column label="上次运行">
-                            <template #default="scope">{{ formatTime(scope.row.last_run_at) }}</template>
-                          </el-table-column>
-                          <el-table-column prop="last_error" label="上次错误" />
-                          <el-table-column label="操作" width="260">
-                            <template #default="scope">
-                              <el-button
-                                type="primary"
-                                size="small"
-                                :loading="triggerLoading[scope.row.id]"
-                                @click="trigger(scope.row)"
-                              >
-                                立刻抓取
-                              </el-button>
-                              <el-button size="small" @click="openTargetDialog(scope.row)">编辑</el-button>
-                              <el-button size="small" type="danger" @click="removeTarget(scope.row)">删除</el-button>
-                            </template>
-                          </el-table-column>
-                        </el-table>
-                      </el-card>
-                    </el-col>
-                  </el-row>
+                  <!-- 账号配置（上） -->
+                  <el-card style="margin-bottom: 16px">
+                    <div class="card-title">账号配置</div>
+                    <div class="search-bar compact">
+                      <el-input
+                        v-model="accountQuery"
+                        size="small"
+                        placeholder="模糊搜索名称"
+                        style="width: 220px"
+                        @keydown.enter="fetchAccounts"
+                      />
+                      <el-button size="small" type="primary" link @click="fetchAccounts" :loading="loading.accounts">
+                        刷新
+                      </el-button>
+                      <el-button size="small" type="success" link @click="openAccountDialog()">
+                        新增账号
+                      </el-button>
+                    </div>
+                    <el-table :data="accountsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+                      <el-table-column fixed type="index" label="序号" width="60" />
+                      <el-table-column prop="name" label="名称" width="160" />
+                      <el-table-column label="更新时间" width="180">
+                        <template #default="scope">{{ formatTime(scope.row.updated_at) }}</template>
+                      </el-table-column>
+                      <el-table-column label="操作" width="200" fixed="right">
+                        <template #default="scope">
+                          <el-space size="small">
+                            <el-button size="small" link type="primary" @click="openAccountDialog(scope.row)">编辑</el-button>
+                            <el-button size="small" link type="danger" @click="removeAccount(scope.row)">删除</el-button>
+                          </el-space>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                    <div class="pager spaced">
+                      <el-pagination
+                        background
+                        small
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :page-sizes="[5, 8, 10, 20]"
+                        :page-size="accountsPageSize"
+                        :total="accounts.length"
+                        :current-page="accountsPage"
+                        @size-change="handleAccountSizeChange"
+                        @current-change="handleAccountCurrentChange"
+                      />
+                    </div>
+                  </el-card>
+
+                  <!-- 公众号配置（下） -->
+                  <el-card>
+                    <div class="card-title">公众号配置</div>
+                    <div class="search-bar compact">
+                      <el-input
+                        v-model="targetQuery"
+                        size="small"
+                        placeholder="模糊搜索名称"
+                        style="width: 220px"
+                        @keydown.enter="fetchTargets"
+                      />
+                      <el-button size="small" type="primary" link @click="fetchTargets" :loading="loading.targets">
+                        刷新
+                      </el-button>
+                      <el-button size="small" type="success" link @click="openTargetDialog()">
+                        新增公众号
+                      </el-button>
+                    </div>
+                    <el-table :data="targetsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+                      <el-table-column fixed type="index" label="序号" width="60" />
+                      <el-table-column prop="name" label="名称" width="180" />
+                      <el-table-column label="调度" min-width="220">
+                        <template #default="scope">{{ renderSchedule(scope.row) }}</template>
+                      </el-table-column>
+                      <el-table-column label="上次运行" width="180">
+                        <template #default="scope">{{ formatTime(scope.row.last_run_at) }}</template>
+                      </el-table-column>
+                      <el-table-column prop="last_error" label="上次错误" min-width="240" />
+                      <el-table-column label="操作" width="320" fixed="right">
+                        <template #default="scope">
+                          <el-space size="small">
+                            <el-button
+                              type="primary"
+                              size="small"
+                              plain
+                              class="square-btn"
+                              :loading="triggerLoading[scope.row.id]"
+                              @click="trigger(scope.row)"
+                            >
+                              立刻抓取
+                            </el-button>
+                            <el-button size="small" link type="primary" @click="openTargetDialog(scope.row)">编辑</el-button>
+                            <el-button size="small" link type="danger" @click="removeTarget(scope.row)">删除</el-button>
+                          </el-space>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                    <div class="pager spaced">
+                      <el-pagination
+                        background
+                        small
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :page-sizes="[5, 8, 10, 20]"
+                        :page-size="targetsPageSize"
+                        :total="targets.length"
+                        :current-page="targetsPage"
+                        @size-change="handleTargetSizeChange"
+                        @current-change="handleTargetCurrentChange"
+                      />
+                    </div>
+                  </el-card>
                 </template>
 
                 <template v-else-if="activeTab === 'articles'">
                   <el-card>
-                    <div class="card-title">
-                      文章列表
+                    <div class="card-title">文章列表</div>
+                    <div class="search-bar compact">
                       <el-input
                         v-model="articleQuery"
                         size="small"
                         placeholder="标题模糊搜索"
-                        style="width: 220px; margin-left: 10px"
-                        @keyup.enter="fetchArticles"
+                        style="width: 240px"
+                        @keydown.enter="fetchArticles"
                       />
                       <el-switch
                         v-model="todayOnly"
                         active-text="仅看今日"
-                        style="margin-left: 12px"
+                        style="margin-left: 8px"
                         @change="fetchArticles"
                       />
-                      <el-radio-group v-model="articleView" size="small" style="margin-left: 12px" @change="onArticleViewChange">
+                      <el-radio-group v-model="articleView" size="small" style="margin-left: 8px" @change="onArticleViewChange">
                         <el-radio-button label="list">列表</el-radio-button>
                         <el-radio-button label="mp">公众号汇总</el-radio-button>
                       </el-radio-group>
-                      <el-select v-model="articleSort" size="small" style="width: 140px; margin-left: 12px" @change="fetchArticles">
+                      <el-select v-model="articleSort" size="small" style="width: 140px; margin-left: 8px" @change="fetchArticles">
                         <el-option label="时间倒序" value="desc" />
                         <el-option label="时间正序" value="asc" />
                       </el-select>
+                      <el-button size="small" type="primary" link style="margin-left: 8px" @click="fetchArticles" :loading="loading.articles">
+                        刷新
+                      </el-button>
                     </div>
-                    <el-button size="small" type="primary" @click="fetchArticles" :loading="loading.articles">刷新</el-button>
                     <template v-if="articleView === 'list'">
-                      <el-table :data="sortedArticles" style="width: 100%; margin-top: 10px" size="small">
-                        <el-table-column prop="mp_name" label="公众号" />
-                        <el-table-column prop="title" label="标题" />
-                        <el-table-column label="发布时间">
+                      <el-table :data="articlesPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+                        <el-table-column fixed type="index" label="序号" width="60" />
+                        <el-table-column prop="mp_name" label="公众号" width="160" />
+                        <el-table-column prop="title" label="标题" min-width="260" />
+                        <el-table-column label="发布时间" width="180">
                           <template #default="scope">{{ formatTime(scope.row.publish_at) }}</template>
                         </el-table-column>
                         <el-table-column label="链接" width="160">
@@ -151,9 +189,22 @@
                           </template>
                         </el-table-column>
                       </el-table>
+                      <div class="pager spaced">
+                        <el-pagination
+                          background
+                          small
+                          layout="total, sizes, prev, pager, next, jumper"
+                          :page-size="articlesPageSize"
+                          :page-sizes="[20, 50, 100]"
+                          :total="sortedArticles.length"
+                          :current-page="articlesPage"
+                          @size-change="handleArticleSizeChange"
+                          @current-change="handleArticleCurrentChange"
+                        />
+                      </div>
                     </template>
                     <template v-else>
-                      <el-table :data="mpSummary" style="width: 100%; margin-top: 10px" size="small">
+                      <el-table :data="mpSummary" style="width: 100%; margin-top: 10px" size="small" stripe border>
                         <el-table-column prop="mp_name" label="公众号" />
                         <el-table-column prop="count" label="文章数" width="100" />
                         <el-table-column label="最新发布时间">
@@ -166,25 +217,41 @@
 
                 <template v-else-if="activeTab === 'logs'">
                   <el-card>
-                    <div class="card-title">
-                      爬取日志
+                    <div class="card-title">爬取日志</div>
+                    <div class="search-bar">
                       <el-input
                         v-model.number="logLimit"
                         size="small"
                         type="number"
-                        style="width: 140px; margin-left: 10px"
-                        placeholder="数量"
+                        style="width: 160px"
+                        placeholder="拉取条数（默认200）"
                       />
-                      <el-button size="small" style="margin-left: 8px" @click="fetchLogs" :loading="loading.logs">刷新</el-button>
+                      <el-button size="small" type="primary" plain style="margin-left: 8px" @click="fetchLogs" :loading="loading.logs">
+                        刷新
+                      </el-button>
                     </div>
-                    <el-table :data="logs" style="width: 100%; margin-top: 10px" size="small">
+                    <el-table :data="logsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+                      <el-table-column fixed type="index" label="序号" width="60" />
                       <el-table-column prop="target_name" label="公众号" />
                       <el-table-column prop="status" label="状态" width="90" />
                       <el-table-column prop="message" label="消息" />
-                      <el-table-column label="时间" width="160">
+                      <el-table-column label="时间" width="180">
                         <template #default="scope">{{ formatTime(scope.row.created_at) }}</template>
                       </el-table-column>
                     </el-table>
+                    <div class="pager spaced">
+                      <el-pagination
+                        background
+                        small
+                        layout="total, sizes, prev, pager, next, jumper"
+                        :page-sizes="[10, 20, 50, 100]"
+                        :page-size="logsPageSize"
+                        :total="logs.length"
+                        :current-page="logsPage"
+                        @size-change="handleLogSizeChange"
+                        @current-change="handleLogCurrentChange"
+                      />
+                    </div>
                   </el-card>
                 </template>
               </div>
@@ -195,8 +262,8 @@
     </el-container>
 
     <!-- 账号对话框（新增/编辑） -->
-    <el-dialog v-model="accountDialog.visible" :title="accountDialog.isEdit ? '编辑账号' : '新增账号'" width="480px">
-      <el-form :model="accountDialog.form" label-width="90px">
+    <el-dialog v-model="accountDialog.visible" :title="accountDialog.isEdit ? '编辑账号' : '新增账号'" width="520px">
+      <el-form :model="accountDialog.form" label-width="120px" label-position="left" class="dialog-form">
         <el-form-item label="名称">
           <el-input v-model="accountDialog.form.name" />
         </el-form-item>
@@ -308,17 +375,25 @@ const activeTab = ref("config");
 const accountQuery = ref("");
 const targetQuery = ref("");
 const articleQuery = ref("");
-const logLimit = ref(50);
+const logLimit = ref(200);
 const articleView = ref("list"); // list | mp
 const todayOnly = ref(false);
 const articleSort = ref("desc"); // desc | asc
+const accountsPage = ref(1);
+const accountsPageSize = ref(8);
+const targetsPage = ref(1);
+const targetsPageSize = ref(8);
+const articlesPage = ref(1);
+const articlesPageSize = ref(20);
+const logsPage = ref(1);
+const logsPageSize = ref(10);
 
 const accountDialog = reactive({
   visible: false,
   loading: false,
   isEdit: false,
   currentId: "",
-  form: { name: "", token: "", cookie: "", remark: "" },
+  form: { name: "", token: "", cookie: "", login_account: "", login_password: "", remark: "" },
 });
 
 const targetDialog = reactive({
@@ -419,7 +494,12 @@ const openAccountDialog = (row) => {
   if (row) {
     accountDialog.isEdit = true;
     accountDialog.currentId = row.id;
-    accountDialog.form = { name: row.name, token: row.token, cookie: row.cookie, remark: row.remark || "" };
+    accountDialog.form = {
+      name: row.name,
+      token: row.token,
+      cookie: row.cookie,
+      remark: row.remark || "",
+    };
   } else {
     accountDialog.isEdit = false;
     accountDialog.currentId = "";
@@ -601,6 +681,11 @@ const sortedArticles = computed(() => {
   });
 });
 
+const articlesPaged = computed(() => {
+  const start = (articlesPage.value - 1) * articlesPageSize.value;
+  return sortedArticles.value.slice(start, start + articlesPageSize.value);
+});
+
 const mpSummary = computed(() => {
   const map = new Map();
   sortedArticles.value.forEach((item) => {
@@ -620,6 +705,51 @@ const onArticleViewChange = () => {
   // no-op for now; could add different fetch params by view
 };
 
+const accountsPaged = computed(() => {
+  const start = (accountsPage.value - 1) * accountsPageSize.value;
+  return accounts.value.slice(start, start + accountsPageSize.value);
+});
+
+const targetsPaged = computed(() => {
+  const start = (targetsPage.value - 1) * targetsPageSize.value;
+  return targets.value.slice(start, start + targetsPageSize.value);
+});
+
+const logsPaged = computed(() => {
+  const start = (logsPage.value - 1) * logsPageSize.value;
+  return logs.value.slice(start, start + logsPageSize.value);
+});
+
+const handleAccountSizeChange = (val) => {
+  accountsPageSize.value = val;
+  accountsPage.value = 1;
+};
+const handleAccountCurrentChange = (val) => {
+  accountsPage.value = val;
+};
+const handleTargetSizeChange = (val) => {
+  targetsPageSize.value = val;
+  targetsPage.value = 1;
+};
+const handleTargetCurrentChange = (val) => {
+  targetsPage.value = val;
+};
+const handleArticleSizeChange = (val) => {
+  articlesPageSize.value = val;
+  articlesPage.value = 1;
+};
+const handleArticleCurrentChange = (val) => {
+  articlesPage.value = val;
+};
+const handleLogSizeChange = (val) => {
+  logsPageSize.value = val;
+  logsPage.value = 1;
+};
+const handleLogCurrentChange = (val) => {
+  logsPage.value = val;
+};
+
+
 onMounted(() => {
   fetchAccounts();
   fetchTargets();
@@ -635,7 +765,7 @@ const onSelect = ({ key }) => {
 
 <style scoped>
 .layout {
-  background: #f5f7fa;
+  background: #eef2f7;
   min-height: 100vh;
 }
 .header {
@@ -643,13 +773,20 @@ const onSelect = ({ key }) => {
   justify-content: space-between;
   align-items: center;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  padding: 12px 24px;
+}
+.page-container {
+  width: 100%;
+  margin: 0;
+  padding: 0 16px 16px;
 }
 .card-title {
   font-weight: bold;
   margin-bottom: 8px;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 .content {
   display: block;
@@ -677,6 +814,55 @@ const onSelect = ({ key }) => {
 }
 .el-button {
   border-radius: 8px;
+}
+.square-btn {
+  border-radius: 2px;
+}
+.main-shell {
+  padding-top: 12px;
+}
+.card-shell {
+  border: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  width: 100%;
+}
+.aside {
+  background: #fff;
+  border-right: 1px solid #ebeef5;
+  padding-top: 12px;
+}
+.daily-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dialog-form .el-form-item {
+  align-items: flex-start;
+}
+.dialog-form .el-form-item__label {
+  padding-top: 6px;
+}
+.tiny-tag {
+  padding: 0 4px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 10px;
+}
+.sub-hint {
+  margin: 6px 0 2px;
+  color: #909399;
+  font-size: 12px;
+}
+.search-bar.compact {
+  gap: 8px;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+}
+.pager.spaced {
+  margin-top: 16px;
 }
 </style>
 

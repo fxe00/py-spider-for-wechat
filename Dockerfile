@@ -16,10 +16,6 @@ COPY crawler crawler
 COPY utils utils
 # 拷贝前端编译产物
 COPY --from=frontend-builder /app/frontend/dist frontend/dist
-ENV MONGO_URI=mongodb://mongo:27017/wechat_spider \
-    JWT_SECRET=change-me \
-    ADMIN_USER=admin \
-    ADMIN_PASS=admin123
+# 运行时敏感配置请通过 docker-compose/.env 注入，不在镜像内硬编码
 EXPOSE 8000
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "backend.app:app", "--timeout", "120"]
-
