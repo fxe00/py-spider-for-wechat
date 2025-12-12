@@ -32,6 +32,7 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "27017:27017"
 
