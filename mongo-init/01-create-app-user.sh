@@ -10,7 +10,8 @@ DB_NAME=${MONGO_DB:-wechat_spider}
 APP_USER=${MONGO_USER:-app_user_123}
 APP_PASS=${MONGO_PASS:-app_user_password_123}
 
-cat <<EOF | mongo --quiet
+# Use mongosh (available in mongo:6) instead of deprecated mongo client
+cat <<EOF | mongosh --quiet
 use ${DB_NAME}
 db.createUser({user: "${APP_USER}", pwd: "${APP_PASS}", roles: [ { role: "readWrite", db: "${DB_NAME}" } ]})
 EOF
