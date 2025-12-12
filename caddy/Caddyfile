@@ -1,0 +1,19 @@
+# Replace `example.com` with your actual domain (or subdomain).
+
+# Ensure the domain's A record points to the server IP before starting Caddy.
+
+# Optionally set an email for Let's Encrypt notifications by replacing `you@example.com`.
+
+example.com { # gzip/deflate compression
+encode gzip
+
+    # optional: set an email for Let's Encrypt
+    # tls you@example.com
+
+    # proxy API requests to backend (Flask gunicorn on 8000)
+    reverse_proxy /api/* http://app:8000
+
+    # proxy everything else to frontend (nginx container serving the built SPA)
+    reverse_proxy frontend:80
+
+}

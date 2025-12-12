@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: wechat-spider-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wechat-spider-frontend
+    expose:
+      - "80"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: wechat-spider-app
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:6
+    container_name: wechat-spider-mongo
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  caddy_data:
+  caddy_config:
+  mongo-data:
