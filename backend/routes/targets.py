@@ -51,6 +51,12 @@ def create_target():
     account_id = body.get("account_id")
     if not name or not account_id:
         return jsonify({"message": "name/account_id 必填"}), 400
+
+    # 检查名称是否已存在
+    existing = get_db()["targets"].find_one({"name": name})
+    if existing:
+        return jsonify({"message": f"公众号名称 '{name}' 已存在"}), 400
+
     payload = {
         "name": name,
         "biz": (body.get("biz") or "").strip(),
@@ -65,10 +71,16 @@ def create_target():
         "created_at": body.get("created_at"),
         "last_run_at": None,
     }
-    result = get_db()["targets"].insert_one(payload)
-    payload["_id"] = result.inserted_id
-    refresh_jobs()
-    return jsonify(_serialize(payload)), 201
+    try:
+        result = get_db()["targets"].insert_one(payload)
+        payload["_id"] = result.inserted_id
+        refresh_jobs()
+        return jsonify(_serialize(payload)), 201
+    except Exception as exc:
+        # 捕获唯一索引冲突
+        if "duplicate key" in str(exc).lower() or "E11000" in str(exc):
+            return jsonify({"message": f"公众号名称 '{name}' 已存在"}), 400
+        raise
 
 
 @bp.route("/<id>", methods=["PUT"])
@@ -93,12 +105,30 @@ def update_target(id):
         updates["account_id"] = ObjectId(body["account_id"])
     if not updates:
         return jsonify({"message": "无更新字段"}), 400
-    get_db()["targets"].update_one({"_id": ObjectId(id)}, {"$set": updates})
-    doc = get_db()["targets"].find_one({"_id": ObjectId(id)})
-    if not doc:
-        return jsonify({"message": "未找到记录"}), 404
-    refresh_jobs()
-    return jsonify(_serialize(doc))
+
+    # 如果更新名称，检查是否与其他记录冲突
+    if "name" in updates:
+        name = (updates["name"] or "").strip()
+        if not name:
+            return jsonify({"message": "公众号名称不能为空"}), 400
+        updates["name"] = name  # 更新清理后的名称
+        existing = get_db()["targets"].find_one({"name": name, "_id": {"$ne": ObjectId(id)}})
+        if existing:
+            return jsonify({"message": f"公众号名称 '{name}' 已存在"}), 400
+
+    try:
+        get_db()["targets"].update_one({"_id": ObjectId(id)}, {"$set": updates})
+        doc = get_db()["targets"].find_one({"_id": ObjectId(id)})
+        if not doc:
+            return jsonify({"message": "未找到记录"}), 404
+        refresh_jobs()
+        return jsonify(_serialize(doc))
+    except Exception as exc:
+        # 捕获唯一索引冲突
+        if "duplicate key" in str(exc).lower() or "E11000" in str(exc):
+            name = updates.get("name", "")
+            return jsonify({"message": f"公众号名称 '{name}' 已存在"}), 400
+        raise
 
 
 @bp.route("/<id>", methods=["DELETE"])

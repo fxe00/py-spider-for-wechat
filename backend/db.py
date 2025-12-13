@@ -20,6 +20,7 @@ def init_db(app):
     app.mongo["articles"].create_index([("url", ASCENDING)], unique=True)
     app.mongo["targets"].create_index([("enabled", ASCENDING)])
     app.mongo["targets"].create_index([("freq_minutes", ASCENDING)])
+    app.mongo["targets"].create_index([("name", ASCENDING)], unique=True)
     app.mongo["mp_accounts"].create_index([("name", ASCENDING)], unique=True)
     app.mongo["users"].create_index([("username", ASCENDING)], unique=True)
     app.mongo["crawl_logs"].create_index([("created_at", ASCENDING)])
