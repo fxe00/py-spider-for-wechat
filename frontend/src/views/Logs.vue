@@ -63,7 +63,8 @@
               placeholder="搜索公众号名称..."
               clearable
               style="width: 200px"
-              @clear="fetchLogs"
+              @keydown.enter="() => { logsPage = 1; fetchLogs(); }"
+              @clear="() => { logsPage = 1; fetchLogs(); }"
             >
               <template #prefix>
                 <el-icon><Search /></el-icon>
@@ -75,7 +76,7 @@
               placeholder="状态筛选"
               clearable
               style="width: 140px"
-              @change="fetchLogs"
+              @change="() => { logsPage = 1; fetchLogs(); }"
             >
               <el-option label="全部" value="" />
               <el-option label="开始" value="start" />
@@ -83,14 +84,15 @@
               <el-option label="完成" value="finish" />
               <el-option label="错误" value="error" />
             </el-select>
-            <el-input-number
-              v-model="logLimit"
-              size="default"
-              :min="50"
-              :max="1000"
-              :step="50"
-              style="width: 140px"
+            <el-switch
+              v-model="latestOnly"
+              active-text="仅最新"
+              inactive-text="全部"
+              @change="() => { logsPage = 1; fetchLogs(); }"
             />
+            <el-button size="default" type="warning" :icon="Delete" @click="cleanupStaleLogs" :loading="loading.cleanup">
+              清理超时日志
+            </el-button>
             <el-button size="default" type="primary" :icon="Refresh" @click="fetchLogs" :loading="loading.logs">
               刷新
             </el-button>
@@ -101,7 +103,7 @@
       <!-- 日志列表 -->
       <el-card class="logs-card" shadow="hover">
         <el-table
-          :data="filteredLogsPaged"
+          :data="logs"
           style="width: 100%"
           size="default"
           stripe
@@ -151,7 +153,7 @@
             layout="total, sizes, prev, pager, next, jumper"
             :page-sizes="[10, 20, 50, 100]"
             :page-size="logsPageSize"
-            :total="filteredLogs.length"
+              :total="totalLogs"
             :current-page="logsPage"
             @size-change="handleLogSizeChange"
             @current-change="handleLogCurrentChange"
@@ -295,20 +297,33 @@ import {
 import Layout from "./Layout.vue";
 
 const logs = ref([]);
-const loading = ref({ logs: false });
-const logLimit = ref(200);
+const totalLogs = ref(0); // 总日志数（从后端获取）
+const loading = ref({ logs: false, cleanup: false });
 const logsPage = ref(1);
 const logsPageSize = ref(20);
 const targetNameFilter = ref("");
 const statusFilter = ref("");
+const latestOnly = ref(true); // 默认只显示每个任务的最新日志
 
 const formatTime = (val) => (val ? dayjs(val).format("YYYY-MM-DD HH:mm:ss") : "");
 
 const fetchLogs = async () => {
   loading.value.logs = true;
   try {
-    const { data } = await http.get("/logs", { params: { limit: logLimit.value } });
-    logs.value = data;
+    const params = {
+      page: logsPage.value,
+      page_size: logsPageSize.value,
+      latest_only: latestOnly.value,
+    };
+    if (targetNameFilter.value) {
+      params.target_name = targetNameFilter.value;
+    }
+    if (statusFilter.value) {
+      params.status = statusFilter.value;
+    }
+    const { data } = await http.get("/logs", { params });
+    logs.value = data.items || [];
+    totalLogs.value = data.total || 0;
   } catch {
     ElMessage.error("获取日志失败");
   } finally {
@@ -329,24 +344,7 @@ const runningCount = computed(() => {
   return logs.value.filter((log) => log.status === "start" || log.status === "progress").length;
 });
 
-// 筛选日志
-const filteredLogs = computed(() => {
-  let result = logs.value;
-  if (targetNameFilter.value) {
-    result = result.filter((log) =>
-      log.target_name?.toLowerCase().includes(targetNameFilter.value.toLowerCase())
-    );
-  }
-  if (statusFilter.value) {
-    result = result.filter((log) => log.status === statusFilter.value);
-  }
-  return result;
-});
-
-const filteredLogsPaged = computed(() => {
-  const start = (logsPage.value - 1) * logsPageSize.value;
-  return filteredLogs.value.slice(start, start + logsPageSize.value);
-});
+// 移除前端筛选和分页，使用后端分页
 
 // 状态相关
 const getStatusType = (status) => {
@@ -459,10 +457,25 @@ const formatDuration = (ms) => {
 const handleLogSizeChange = (val) => {
   logsPageSize.value = val;
   logsPage.value = 1;
+  fetchLogs(); // 重新获取数据
 };
 
 const handleLogCurrentChange = (val) => {
   logsPage.value = val;
+  fetchLogs(); // 重新获取数据
+};
+
+const cleanupStaleLogs = async () => {
+  loading.value.cleanup = true;
+  try {
+    await http.post("/logs/cleanup");
+    ElMessage.success("清理完成");
+    fetchLogs(); // 重新获取日志
+  } catch {
+    ElMessage.error("清理失败");
+  } finally {
+    loading.value.cleanup = false;
+  }
 };
 
 onMounted(() => {

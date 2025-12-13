@@ -28,12 +28,15 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     """
     if not account:
         logging.warning("No account bound for target=%s", target.get("name"))
+        _append_log(target, status="error", message="未绑定账号", details={"step": "初始化", "error_type": "no_account"})
         return
     token = (account.get("token") or "").strip()
     cookie = (account.get("cookie") or "").strip()
     mp_name = target.get("name") or ""
     if not token or not cookie or not mp_name:
-        _set_last_error(target, "token/cookie/name 缺失")
+        error_msg = "token/cookie/name 缺失"
+        _set_last_error(target, error_msg)
+        _append_log(target, status="error", message=error_msg, details={"step": "初始化", "error_type": "missing_params"})
         logging.warning("Missing token/cookie/name for target=%s", target.get("_id"))
         return
 
