@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -22,7 +23,8 @@ def setup_scheduler(app: Flask):
     if not scheduler.running:
         scheduler.start()
         import time
-        time.sleep(0.5)  # 等待调度器完全启动
+        time.sleep(1.0)  # 等待调度器完全启动
+        logging.info("Scheduler started, timezone: Asia/Shanghai")
     refresh_jobs()
     app.teardown_appcontext(lambda _exc=None: scheduler.shutdown(wait=False) if scheduler.running else None)
 
@@ -31,11 +33,35 @@ def refresh_jobs():
     if _app is None:
         raise RuntimeError("Scheduler not initialized with app")
     with _app.app_context():
+        # 确保调度器正在运行
+        if not scheduler.running:
+            logging.warning("Scheduler not running, starting it...")
+            scheduler.start()
+            import time
+            time.sleep(1.0)
+
         scheduler.remove_all_jobs()
         targets = list(get_db()["targets"].find({"enabled": True}))
         for target in targets:
             _add_jobs_for_target(target)
-        logging.info("Scheduler loaded %s targets", len(targets))
+
+        # 等待任务被调度器处理
+        import time
+        time.sleep(0.2)
+
+        # 验证所有任务的下次执行时间
+        all_jobs = scheduler.get_jobs()
+        tz = pytz.timezone("Asia/Shanghai")
+        current_time = datetime.now(tz)
+        logging.info("Scheduler loaded %s targets, total %s jobs (current time: %s)",
+                     len(targets), len(all_jobs), current_time)
+        for job in all_jobs:
+            if hasattr(job, "next_run_time") and job.next_run_time:
+                logging.info("Job %s next run: %s (in %s)",
+                             job.id, job.next_run_time,
+                             job.next_run_time - current_time if job.next_run_time > current_time else "PAST")
+            else:
+                logging.warning("Job %s has no next_run_time", job.id)
 
 
 def trigger_target(target_id: str):
@@ -99,18 +125,19 @@ def _add_jobs_for_target(target: dict):
             jobs.append({"id": target_id, "trigger": IntervalTrigger(minutes=minutes)})
 
     for job in jobs:
-        scheduler.add_job(
-            trigger_target,
-            id=job["id"],
-            trigger=job["trigger"],
-            args=[target_id],
-            replace_existing=True,
-            max_instances=1,
-            misfire_grace_time=300,
-        )
-        next_run = scheduler.get_job(job["id"])
-        if next_run and hasattr(next_run, "next_run_time") and next_run.next_run_time:
-            logging.info("Job %s next run: %s", job["id"], next_run.next_run_time)
+        try:
+            scheduler.add_job(
+                trigger_target,
+                id=job["id"],
+                trigger=job["trigger"],
+                args=[target_id],
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=300,
+            )
+        except Exception as exc:
+            logging.error("Failed to add job %s: %s", job["id"], exc)
+            continue
 
 
 def _interval_to_minutes(target: dict):
