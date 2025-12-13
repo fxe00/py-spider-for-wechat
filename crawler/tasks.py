@@ -1,6 +1,10 @@
 import logging
+import base64
+import io
+import requests
 from datetime import datetime
 from typing import Dict, Optional
+from PIL import Image
 
 from backend.db import get_db
 from backend.config import get_settings
@@ -8,6 +12,10 @@ from utils.getFakId import get_fakid
 from utils.getAllUrls import getAllUrl
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+
+# 缩略图配置
+THUMBNAIL_SIZE = (64, 64)  # 缩略图尺寸
+THUMBNAIL_QUALITY = 75  # JPEG质量（1-100）
 
 
 def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
@@ -107,9 +115,20 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         update_data = {}
         if need_refresh_fakeid:
             update_data["fakeid"] = fakeid
-        # 如果获取到头像，也保存
+        # 如果获取到头像URL，下载并转换为base64保存
         if "wpub_avatar" in search_results[0] and search_results[0]["wpub_avatar"]:
-            update_data["mp_avatar"] = search_results[0]["wpub_avatar"]
+            avatar_url = search_results[0]["wpub_avatar"]
+            # 如果已经是base64格式（data URI），直接保存
+            if avatar_url.startswith("data:image/"):
+                update_data["mp_avatar"] = avatar_url
+            else:
+                # 下载图片并转换为base64
+                avatar_base64 = _download_avatar_as_base64(avatar_url, headers)
+                if avatar_base64:
+                    update_data["mp_avatar"] = avatar_base64
+                    logging.info("Downloaded and converted avatar to base64 for target=%s", mp_name)
+                else:
+                    logging.warning("Failed to download avatar for target=%s", mp_name)
 
         if update_data:
             try:
@@ -160,6 +179,93 @@ def _build_headers(cookie: str):
         "referer": "https://mp.weixin.qq.com/",
         "accept": "application/json,text/javascript,*/*;q=0.01",
     }
+
+
+def _download_avatar_as_base64(avatar_url: str, headers: Dict, thumbnail: bool = True) -> Optional[str]:
+    """
+    下载头像图片并转换为base64字符串（可选生成缩略图）
+
+    Args:
+        avatar_url: 头像URL
+        headers: HTTP请求头（包含cookie等）
+        thumbnail: 是否生成缩略图（默认True，减少流量）
+
+    Returns:
+        base64编码的图片字符串（data URI格式），失败返回None
+    """
+    if not avatar_url:
+        return None
+
+    try:
+        # 下载图片
+        response = requests.get(avatar_url, headers=headers, timeout=10, stream=True)
+        response.raise_for_status()
+
+        # 检查Content-Type
+        content_type = response.headers.get("Content-Type", "").lower()
+        if not content_type.startswith("image/"):
+            logging.warning("Avatar URL does not return an image: %s", avatar_url)
+            return None
+
+        # 读取图片数据
+        image_data = response.content
+        if len(image_data) > 2 * 1024 * 1024:  # 限制2MB
+            logging.warning("Avatar image too large: %d bytes", len(image_data))
+            return None
+
+        # 如果需要生成缩略图
+        if thumbnail:
+            try:
+                # 使用PIL处理图片
+                img = Image.open(io.BytesIO(image_data))
+
+                # 转换为RGB模式（如果是RGBA或其他模式）
+                if img.mode in ("RGBA", "LA", "P"):
+                    # 创建白色背景
+                    background = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                    img = background
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                # 生成缩略图（保持宽高比）
+                # 兼容不同版本的PIL
+                try:
+                    img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+                except AttributeError:
+                    # 旧版本PIL使用LANCZOS常量
+                    img.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
+
+                # 转换为字节流
+                output = io.BytesIO()
+                img.save(output, format="JPEG", quality=THUMBNAIL_QUALITY, optimize=True)
+                image_data = output.getvalue()
+                mime_type = "image/jpeg"
+
+                logging.debug("Generated thumbnail: %d bytes (original: %d bytes)",
+                              len(image_data), len(response.content))
+            except Exception as img_exc:
+                logging.warning("Failed to generate thumbnail, using original image: %s", img_exc)
+                # 如果缩略图生成失败，使用原图
+                mime_type = content_type
+                if mime_type == "image/jpg":
+                    mime_type = "image/jpeg"
+        else:
+            # 使用原图
+            mime_type = content_type
+            if mime_type == "image/jpg":
+                mime_type = "image/jpeg"
+
+        # 转换为base64
+        base64_str = base64.b64encode(image_data).decode("utf-8")
+
+        # 返回data URI格式
+        return f"data:{mime_type};base64,{base64_str}"
+    except Exception as exc:
+        logging.warning("Failed to download avatar from %s: %s", avatar_url, exc)
+        return None
 
 
 def _set_last_error(target: Dict, message: Optional[str]):

@@ -137,7 +137,9 @@
                     @error="handleAvatarError"
                   />
                   <el-icon v-else class="mp-avatar-icon"><User /></el-icon>
-                  <span>{{ scope.row.mp_name || "未知" }}</span>
+                  <el-tooltip :content="scope.row.mp_name || '未知'" placement="top" :disabled="!scope.row.mp_name || scope.row.mp_name.length <= 10">
+                    <span class="mp-name-text">{{ scope.row.mp_name || "未知" }}</span>
+                  </el-tooltip>
                 </div>
               </template>
             </el-table-column>
@@ -196,7 +198,9 @@
                     @error="handleAvatarError"
                   />
                   <el-icon v-else class="article-mp-icon"><User /></el-icon>
-                  <span>{{ article.mp_name || "未知" }}</span>
+                  <el-tooltip :content="article.mp_name || '未知'" placement="top" :disabled="!article.mp_name || article.mp_name.length <= 10">
+                    <span class="mp-name-text">{{ article.mp_name || "未知" }}</span>
+                  </el-tooltip>
                 </div>
                 <div class="article-time">
                   <el-icon><Clock /></el-icon>
@@ -249,7 +253,9 @@
                   <el-icon v-else><UserFilled /></el-icon>
                 </div>
                 <div class="mp-info">
-                  <div class="mp-name">{{ mp.mp_name }}</div>
+                  <el-tooltip :content="mp.mp_name" placement="top" :disabled="!mp.mp_name || mp.mp_name.length <= 12">
+                    <div class="mp-name">{{ mp.mp_name }}</div>
+                  </el-tooltip>
                   <div class="mp-stats">
                     <span class="mp-count">{{ mp.count }} 篇文章</span>
                     <span class="mp-time">最新：{{ formatTime(mp.latest) }}</span>
@@ -548,6 +554,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0; /* 允许flex子元素收缩 */
+  width: 100%;
+}
+
+.table-mp-cell .mp-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .mp-avatar-img {
@@ -605,6 +622,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0; /* 允许flex子元素收缩 */
+}
+
+.article-mp .mp-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .article-mp-avatar {
