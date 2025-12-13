@@ -24,6 +24,14 @@ def _serialize(doc):
         "account_id": str(doc["account_id"]) if doc.get("account_id") else None,
         "last_run_at": doc.get("last_run_at"),
         "created_at": doc.get("created_at"),
+        # 公众号详细信息
+        "mp_avatar": doc.get("mp_avatar"),
+        "mp_alias": doc.get("mp_alias"),
+        "mp_service_type": doc.get("mp_service_type"),
+        "mp_verify_type": doc.get("mp_verify_type"),
+        "mp_signature": doc.get("mp_signature"),
+        "mp_user_name": doc.get("mp_user_name"),
+        "last_error": doc.get("last_error"),
     }
 
 
@@ -143,6 +151,15 @@ def delete_target(id):
     get_db()["targets"].delete_one({"_id": ObjectId(id)})
     refresh_jobs()
     return jsonify({"deleted": True})
+
+
+@bp.route("/<id>", methods=["GET"])
+@jwt_required
+def get_target(id):
+    doc = get_db()["targets"].find_one({"_id": ObjectId(id)})
+    if not doc:
+        return jsonify({"message": "未找到记录"}), 404
+    return jsonify(_serialize(doc))
 
 
 @bp.route("/<id>/run", methods=["POST"])

@@ -78,24 +78,25 @@
             <template #default="scope">{{ formatTime(scope.row.last_run_at) }}</template>
           </el-table-column>
           <el-table-column prop="last_error" label="上次错误" min-width="240" />
-          <el-table-column label="操作" width="320" fixed="right">
-            <template #default="scope">
-              <el-space size="small">
-                <el-button
-                  type="primary"
-                  size="small"
-                  plain
-                  class="square-btn"
-                  :loading="triggerLoading[scope.row.id]"
-                  @click="trigger(scope.row)"
-                >
-                  立刻抓取
-                </el-button>
-                <el-button size="small" link type="primary" @click="openTargetDialog(scope.row)">编辑</el-button>
-                <el-button size="small" link type="danger" @click="removeTarget(scope.row)">删除</el-button>
-              </el-space>
-            </template>
-          </el-table-column>
+            <el-table-column label="操作" width="380" fixed="right">
+              <template #default="scope">
+                <el-space size="small">
+                  <el-button
+                    type="primary"
+                    size="small"
+                    plain
+                    class="square-btn"
+                    :loading="triggerLoading[scope.row.id]"
+                    @click="trigger(scope.row)"
+                  >
+                    立刻抓取
+                  </el-button>
+                  <el-button size="small" link type="info" @click="showTargetDetail(scope.row)">详情</el-button>
+                  <el-button size="small" link type="primary" @click="openTargetDialog(scope.row)">编辑</el-button>
+                  <el-button size="small" link type="danger" @click="removeTarget(scope.row)">删除</el-button>
+                </el-space>
+              </template>
+            </el-table-column>
         </el-table>
         <div class="pager spaced">
           <el-pagination
@@ -142,11 +143,16 @@
           <el-input v-model="targetDialog.form.name" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-input
+          <el-select
             v-model="targetDialog.form.category"
-            placeholder="如：网络安全、金融、生活等"
+            placeholder="选择或输入分类"
+            filterable
+            allow-create
             clearable
-          />
+            style="width: 100%"
+          >
+            <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
+          </el-select>
         </el-form-item>
         <el-form-item label="绑定账号">
           <el-select v-model="targetDialog.form.account_id" placeholder="选择已有账号">
@@ -211,6 +217,77 @@
         <el-button type="primary" :loading="targetDialog.loading" @click="submitTarget">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 公众号详情对话框 -->
+    <el-dialog v-model="targetDetailDialog.visible" title="公众号详情" width="600px">
+      <div v-if="targetDetailDialog.loading" class="detail-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>加载中...</span>
+      </div>
+      <div v-else-if="targetDetailDialog.data" class="target-detail">
+        <div class="detail-header">
+          <img
+            v-if="targetDetailDialog.data.mp_avatar"
+            :src="targetDetailDialog.data.mp_avatar"
+            class="detail-avatar"
+            @error="handleAvatarError"
+          />
+          <el-icon v-else class="detail-avatar-icon"><UserFilled /></el-icon>
+          <div class="detail-title">
+            <h3>{{ targetDetailDialog.data.name }}</h3>
+            <p v-if="targetDetailDialog.data.mp_signature" class="detail-signature">
+              {{ targetDetailDialog.data.mp_signature }}
+            </p>
+          </div>
+        </div>
+        <el-divider />
+        <div class="detail-info">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="分类">
+              <el-tag v-if="targetDetailDialog.data.category" size="small" type="info">
+                {{ targetDetailDialog.data.category }}
+              </el-tag>
+              <span v-else class="text-muted">-</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="别名">
+              {{ targetDetailDialog.data.mp_alias || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="服务类型">
+              {{ targetDetailDialog.data.mp_service_type || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="认证类型">
+              {{ targetDetailDialog.data.mp_verify_type || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="用户名">
+              {{ targetDetailDialog.data.mp_user_name || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="biz">
+              {{ targetDetailDialog.data.biz || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="调度模式">
+              {{ renderSchedule(targetDetailDialog.data) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="targetDetailDialog.data.enabled ? 'success' : 'danger'" size="small">
+                {{ targetDetailDialog.data.enabled ? "启用" : "禁用" }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="上次运行">
+              {{ formatTime(targetDetailDialog.data.last_run_at) || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">
+              {{ formatTime(targetDetailDialog.data.created_at) || "-" }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="targetDetailDialog.data.last_error" label="上次错误" :span="2">
+              <el-text type="danger">{{ targetDetailDialog.data.last_error }}</el-text>
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="targetDetailDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </Layout>
 </template>
 
@@ -219,10 +296,12 @@ import { ref, reactive, onMounted, computed } from "vue";
 import dayjs from "dayjs";
 import http from "../api/http";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Loading, UserFilled } from "@element-plus/icons-vue";
 import Layout from "./Layout.vue";
 
 const accounts = ref([]);
 const targets = ref([]);
+const categories = ref([]);
 const loading = ref({ accounts: false, targets: false });
 const triggerLoading = reactive({});
 const accountQuery = ref("");
@@ -259,6 +338,12 @@ const targetDialog = reactive({
   },
 });
 
+const targetDetailDialog = reactive({
+  visible: false,
+  loading: false,
+  data: null,
+});
+
 const formatTime = (val) => (val ? dayjs(val).format("YYYY-MM-DD HH:mm") : "");
 
 const fetchAccounts = async () => {
@@ -282,6 +367,15 @@ const fetchTargets = async () => {
     ElMessage.error("获取公众号配置失败");
   } finally {
     loading.value.targets = false;
+  }
+};
+
+const fetchCategories = async () => {
+  try {
+    const { data } = await http.get("/targets/categories");
+    categories.value = data || [];
+  } catch {
+    // 忽略错误，分类是可选的
   }
 };
 
@@ -354,6 +448,7 @@ const removeAccount = (row) => {
 };
 
 const openTargetDialog = (row) => {
+  fetchCategories(); // 刷新分类列表
   if (!accounts.value.length) {
     ElMessage.warning("请先添加登录账号");
     return;
@@ -445,6 +540,25 @@ const removeTarget = (row) => {
     .catch(() => {});
 };
 
+const showTargetDetail = async (row) => {
+  targetDetailDialog.visible = true;
+  targetDetailDialog.loading = true;
+  targetDetailDialog.data = null;
+  try {
+    const { data } = await http.get(`/targets/${row.id}`);
+    targetDetailDialog.data = data;
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || "获取详情失败");
+    targetDetailDialog.visible = false;
+  } finally {
+    targetDetailDialog.loading = false;
+  }
+};
+
+const handleAvatarError = (event) => {
+  event.target.style.display = "none";
+};
+
 const convertToMinutes = (value, unit) => {
   const v = Number(value) || 0;
   if (unit === "hour") return v * 60;
@@ -510,6 +624,7 @@ const handleTargetCurrentChange = (val) => {
 onMounted(() => {
   fetchAccounts();
   fetchTargets();
+  fetchCategories();
 });
 </script>
 
@@ -550,6 +665,69 @@ onMounted(() => {
 }
 .square-btn {
   border-radius: 2px;
+}
+
+/* 详情对话框样式 */
+.detail-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 12px;
+  color: #909399;
+}
+
+.target-detail {
+  padding: 8px 0;
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.detail-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.detail-avatar-icon {
+  width: 80px;
+  height: 80px;
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.detail-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-title h3 {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.detail-signature {
+  margin: 0;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.detail-info {
+  margin-top: 16px;
+}
+
+.text-muted {
+  color: #909399;
 }
 </style>
 

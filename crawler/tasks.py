@@ -115,9 +115,24 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         update_data = {}
         if need_refresh_fakeid:
             update_data["fakeid"] = fakeid
+
+        result = search_results[0]
+
+        # 保存其他公众号信息
+        if "alias" in result:
+            update_data["mp_alias"] = result["alias"]
+        if "service_type" in result:
+            update_data["mp_service_type"] = result["service_type"]
+        if "verify_type" in result:
+            update_data["mp_verify_type"] = result["verify_type"]
+        if "signature" in result:
+            update_data["mp_signature"] = result["signature"]
+        if "user_name" in result:
+            update_data["mp_user_name"] = result["user_name"]
+
         # 如果获取到头像URL，下载并转换为base64保存
-        if "wpub_avatar" in search_results[0] and search_results[0]["wpub_avatar"]:
-            avatar_url = search_results[0]["wpub_avatar"]
+        if "wpub_avatar" in result and result["wpub_avatar"]:
+            avatar_url = result["wpub_avatar"]
             # 如果已经是base64格式（data URI），直接保存
             if avatar_url.startswith("data:image/"):
                 update_data["mp_avatar"] = avatar_url
@@ -129,6 +144,18 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
                     logging.info("Downloaded and converted avatar to base64 for target=%s", mp_name)
                 else:
                     logging.warning("Failed to download avatar for target=%s", mp_name)
+        else:
+            # 记录为什么没有获取到头像
+            logging.warning("No avatar URL found for target=%s. Available fields: %s",
+                            mp_name, list(result.keys()) if result else "N/A")
+            if "_raw_data" in result:
+                # 检查原始数据中是否有头像字段
+                raw_data = result["_raw_data"]
+                logging.debug("Raw data keys for %s: %s", mp_name, list(raw_data.keys()))
+                # 尝试从原始数据中查找头像
+                for key in raw_data.keys():
+                    if any(x in key.lower() for x in ['img', 'avatar', 'head']):
+                        logging.info("Found potential avatar field '%s' in raw data for %s", key, mp_name)
 
         if update_data:
             try:

@@ -125,13 +125,41 @@ def get_fakid(headers, tok, query, retries=MAX_RETRIES):
                 'wpub_name': item['nickname'],
                 'wpub_fakid': item['fakeid']
             }
-            # 尝试获取头像URL（微信API可能返回的字段名）
-            if 'round_head_img' in item:
-                wpub_info['wpub_avatar'] = item['round_head_img']
-            elif 'headimg' in item:
-                wpub_info['wpub_avatar'] = item['headimg']
-            elif 'avatar' in item:
-                wpub_info['wpub_avatar'] = item['avatar']
+            # 记录所有可用字段（用于调试）
+            available_fields = [k for k in item.keys() if 'img' in k.lower()
+                                or 'avatar' in k.lower() or 'head' in k.lower()]
+            if available_fields:
+                logging.info(f"Available image fields for {item['nickname']}: {available_fields}")
+
+            # 尝试获取头像URL（微信API可能返回的字段名，按优先级尝试）
+            avatar_found = False
+            for field_name in ['round_head_img', 'headimg', 'avatar', 'head_img', 'round_headimg', 'logo_url']:
+                if field_name in item and item[field_name]:
+                    wpub_info['wpub_avatar'] = item[field_name]
+                    avatar_found = True
+                    logging.info(f"Found avatar for {item['nickname']} in field '{field_name}'")
+                    break
+
+            if not avatar_found:
+                logging.warning(f"No avatar field found for {item['nickname']}. All fields: {list(item.keys())}")
+
+            # 保存其他可能有用的字段
+            if 'alias' in item:
+                wpub_info['alias'] = item['alias']  # 公众号别名
+            if 'service_type' in item:
+                wpub_info['service_type'] = item['service_type']  # 服务类型
+            if 'verify_type' in item:
+                wpub_info['verify_type'] = item['verify_type']  # 认证类型
+            if 'signature' in item:
+                wpub_info['signature'] = item['signature']  # 简介/签名
+            if 'user_name' in item:
+                wpub_info['user_name'] = item['user_name']  # 用户名（可能是原始ID）
+
+            # 保存原始数据用于调试（仅包含关键字段）
+            wpub_info['_raw_data'] = {
+                k: v for k, v in item.items()
+                if k not in ['nickname', 'fakeid'] and v is not None
+            }
             wpub_list.append(wpub_info)
 
         return wpub_list
