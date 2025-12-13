@@ -143,7 +143,22 @@
         </div>
         <el-table :data="targetsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
           <el-table-column fixed type="index" label="序号" width="60" />
-          <el-table-column prop="name" label="名称" width="180" />
+          <el-table-column label="名称" width="200">
+            <template #default="scope">
+              <div class="target-name-cell">
+                <img
+                  v-if="scope.row.mp_avatar"
+                  :src="scope.row.mp_avatar"
+                  class="target-avatar"
+                  @error="handleTargetAvatarError"
+                />
+                <el-icon v-else class="target-avatar-icon"><UserFilled /></el-icon>
+                <el-tooltip :content="scope.row.name" placement="top" :disabled="!scope.row.name || scope.row.name.length <= 12">
+                  <span class="target-name-text">{{ scope.row.name || "未知" }}</span>
+                </el-tooltip>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
           <el-table-column label="调度" min-width="220">
             <template #default="scope">{{ renderSchedule(scope.row) }}</template>
@@ -633,6 +648,10 @@ const handleAvatarError = (event) => {
   event.target.style.display = "none";
 };
 
+const handleTargetAvatarError = (event) => {
+  event.target.style.display = "none";
+};
+
 const convertToMinutes = (value, unit) => {
   const v = Number(value) || 0;
   if (unit === "hour") return v * 60;
@@ -840,14 +859,50 @@ onMounted(() => {
   border-radius: 2px;
 }
 
+/* 公众号名称单元格 */
+.target-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.target-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.target-avatar-icon {
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  color: #909399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: #f5f7fa;
+}
+
+.target-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: #303133;
+}
+
 .dialog-form .el-form-item {
   align-items: flex-start;
 }
 .dialog-form .el-form-item__label {
   padding-top: 6px;
-}
-.square-btn {
-  border-radius: 2px;
 }
 
 /* 详情对话框样式 */
