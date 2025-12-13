@@ -65,12 +65,24 @@ def list_articles():
     all_docs = list(cursor)
     target_ids = list(set([ObjectId(doc.get("target_id")) for doc in all_docs if doc.get("target_id")]))
 
-    # 批量查询targets获取分类和头像
+    # 批量查询targets获取分类和头像（通过target_id）
     targets_map = {}
     if target_ids:
         targets = list(get_db()["targets"].find({"_id": {"$in": target_ids}},
-                       {"_id": 1, "category": 1, "mp_avatar": 1}))
+                       {"_id": 1, "category": 1, "mp_avatar": 1, "name": 1}))
         targets_map = {str(t["_id"]): {"category": t.get("category"), "mp_avatar": t.get("mp_avatar")} for t in targets}
+
+    # 备用方案：通过mp_name查找头像（用于处理target_id不匹配的情况）
+    mp_names = list(set([doc.get("mp_name") for doc in all_docs if doc.get("mp_name")]))
+    mp_name_to_avatar = {}
+    if mp_names:
+        targets_by_name = list(get_db()["targets"].find({"name": {"$in": mp_names}},
+                                                        {"name": 1, "mp_avatar": 1, "category": 1}))
+        for t in targets_by_name:
+            mp_name_to_avatar[t.get("name")] = {
+                "mp_avatar": t.get("mp_avatar"),
+                "category": t.get("category")
+            }
 
     # 分页处理
     start = (page - 1) * page_size
@@ -80,6 +92,15 @@ def list_articles():
     for doc in paged_docs:
         target_id_str = str(doc.get("target_id")) if doc.get("target_id") else None
         target_info = targets_map.get(target_id_str, {}) if target_id_str else {}
+
+        # 如果通过target_id没找到头像，尝试通过mp_name查找
+        if not target_info.get("mp_avatar") and doc.get("mp_name"):
+            mp_info = mp_name_to_avatar.get(doc.get("mp_name"), {})
+            if mp_info.get("mp_avatar"):
+                target_info["mp_avatar"] = mp_info["mp_avatar"]
+            if mp_info.get("category") and not target_info.get("category"):
+                target_info["category"] = mp_info["category"]
+
         data.append(_serialize(doc, category=target_info.get("category"), mp_avatar=target_info.get("mp_avatar")))
 
     return jsonify({"total": total, "items": data})
