@@ -15,6 +15,16 @@ def _serialize(doc):
         "status": doc.get("status"),
         "message": doc.get("message"),
         "created_at": doc.get("created_at"),
+        # 详细信息字段
+        "step": doc.get("step"),
+        "articles_count": doc.get("articles_count"),
+        "new_count": doc.get("new_count"),
+        "fakeid": doc.get("fakeid"),
+        "avatar_fetched": doc.get("avatar_fetched"),
+        "error_type": doc.get("error_type"),
+        "duration_ms": doc.get("duration_ms"),
+        "page_num": doc.get("page_num"),
+        "avatar_size": doc.get("avatar_size"),
     }
 
 
@@ -28,4 +38,3 @@ def list_logs():
         query["target_id"] = ObjectId(target_id)
     cursor = get_db()["crawl_logs"].find(query).sort("created_at", -1).limit(limit)
     return jsonify([_serialize(x) for x in cursor])
-

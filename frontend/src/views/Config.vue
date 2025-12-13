@@ -1,23 +1,84 @@
 <template>
   <Layout>
-    <div class="content">
+    <div class="config-page">
+      <!-- 统计卡片 -->
+      <div class="stats-cards">
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon account">
+              <el-icon><User /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ accounts.length }}</div>
+              <div class="stat-label">登录账号</div>
+            </div>
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon target">
+              <el-icon><Collection /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ targets.length }}</div>
+              <div class="stat-label">公众号配置</div>
+            </div>
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon enabled">
+              <el-icon><CircleCheck /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ enabledTargets }}</div>
+              <div class="stat-label">已启用</div>
+            </div>
+          </div>
+        </el-card>
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon category">
+              <el-icon><Folder /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ categoriesCount }}</div>
+              <div class="stat-label">分类数量</div>
+            </div>
+          </div>
+        </el-card>
+      </div>
+
       <!-- 账号配置（上） -->
-      <el-card style="margin-bottom: 16px">
-        <div class="card-title">账号配置</div>
-        <div class="search-bar compact">
+      <el-card class="config-card" shadow="hover">
+        <div class="card-header">
+          <div class="card-title">
+            <el-icon><User /></el-icon>
+            <span>账号配置</span>
+          </div>
+          <div class="card-actions">
+            <el-button size="small" type="primary" :icon="Refresh" @click="fetchAccounts" :loading="loading.accounts">
+              刷新
+            </el-button>
+            <el-button size="small" type="success" :icon="Plus" @click="openAccountDialog()">
+              新增账号
+            </el-button>
+          </div>
+        </div>
+        <div class="search-bar">
           <el-input
             v-model="accountQuery"
-            size="small"
-            placeholder="模糊搜索名称"
-            style="width: 220px"
+            size="default"
+            placeholder="搜索账号名称..."
+            clearable
+            style="width: 280px"
             @keydown.enter="fetchAccounts"
-          />
-          <el-button size="small" type="primary" link @click="fetchAccounts" :loading="loading.accounts">
-            刷新
-          </el-button>
-          <el-button size="small" type="success" link @click="openAccountDialog()">
-            新增账号
-          </el-button>
+            @clear="fetchAccounts"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
         </div>
         <el-table :data="accountsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
           <el-table-column fixed type="index" label="序号" width="60" />
@@ -50,22 +111,35 @@
       </el-card>
 
       <!-- 公众号配置（下） -->
-      <el-card>
-        <div class="card-title">公众号配置</div>
-        <div class="search-bar compact">
+      <el-card class="config-card" shadow="hover">
+        <div class="card-header">
+          <div class="card-title">
+            <el-icon><Collection /></el-icon>
+            <span>公众号配置</span>
+          </div>
+          <div class="card-actions">
+            <el-button size="small" type="primary" :icon="Refresh" @click="fetchTargets" :loading="loading.targets">
+              刷新
+            </el-button>
+            <el-button size="small" type="success" :icon="Plus" @click="openTargetDialog()">
+              新增公众号
+            </el-button>
+          </div>
+        </div>
+        <div class="search-bar">
           <el-input
             v-model="targetQuery"
-            size="small"
-            placeholder="模糊搜索名称"
-            style="width: 220px"
+            size="default"
+            placeholder="搜索公众号名称..."
+            clearable
+            style="width: 280px"
             @keydown.enter="fetchTargets"
-          />
-          <el-button size="small" type="primary" link @click="fetchTargets" :loading="loading.targets">
-            刷新
-          </el-button>
-          <el-button size="small" type="success" link @click="openTargetDialog()">
-            新增公众号
-          </el-button>
+            @clear="fetchTargets"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
         </div>
         <el-table :data="targetsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
           <el-table-column fixed type="index" label="序号" width="60" />
@@ -296,7 +370,7 @@ import { ref, reactive, onMounted, computed } from "vue";
 import dayjs from "dayjs";
 import http from "../api/http";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Loading, UserFilled } from "@element-plus/icons-vue";
+import { Loading, UserFilled, User, Collection, CircleCheck, Folder, Refresh, Plus, Search } from "@element-plus/icons-vue";
 import Layout from "./Layout.vue";
 
 const accounts = ref([]);
@@ -606,6 +680,14 @@ const targetsPaged = computed(() => {
   return targets.value.slice(start, start + targetsPageSize.value);
 });
 
+const enabledTargets = computed(() => {
+  return targets.value.filter(t => t.enabled !== false).length;
+});
+
+const categoriesCount = computed(() => {
+  return availableCategories.value.length;
+});
+
 const handleAccountSizeChange = (val) => {
   accountsPageSize.value = val;
   accountsPage.value = 1;
@@ -629,25 +711,121 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.content {
-  display: block;
+.config-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.card-title {
-  font-weight: bold;
+
+/* 统计卡片 */
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
   margin-bottom: 8px;
+}
+
+.stat-card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.stat-icon.account {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.stat-icon.target {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+}
+
+.stat-icon.enabled {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: white;
+}
+
+.stat-icon.category {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  color: white;
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #303133;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+}
+
+/* 配置卡片 */
+.config-card {
+  border-radius: 8px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.search-bar.compact {
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.search-bar {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 16px;
 }
+
 .pager {
   display: flex;
   justify-content: flex-end;
 }
+
 .pager.spaced {
   margin-top: 16px;
 }
@@ -657,6 +835,11 @@ onMounted(() => {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.square-btn {
+  border-radius: 2px;
+}
+
 .dialog-form .el-form-item {
   align-items: flex-start;
 }

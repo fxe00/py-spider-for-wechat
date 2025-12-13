@@ -40,6 +40,9 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     headers = _build_headers(cookie)
     settings = get_settings()
 
+    # 记录开始时间
+    start_time = datetime.utcnow()
+
     # 1. 获取或查询 fakeid（优先使用缓存的）
     fakeid = target.get("fakeid")
     mp_avatar = target.get("mp_avatar")
@@ -47,29 +50,40 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     need_refresh_avatar = False
     search_results = None  # 用于保存查询结果，以便后续保存头像
 
+    # 记录开始日志
+    _append_log(target, status="start", message="开始爬取", details={"step": "初始化"})
+
     if not fakeid:
         # 如果没有缓存的 fakeid，查询并保存
         logging.info("No cached fakeid for target=%s, querying...", mp_name)
+        _append_log(target, status="progress", message="查询 fakeid", details={"step": "获取fakeid"})
         search_results = get_fakid(headers, token, mp_name)
         if not search_results:
-            _set_last_error(target, "未找到 fakeid，可能 token/cookie 失效")
+            error_msg = "未找到 fakeid，可能 token/cookie 失效"
+            _set_last_error(target, error_msg)
+            _append_log(target, status="error", message=error_msg, details={
+                        "step": "获取fakeid", "error_type": "fakeid_not_found"})
             logging.warning("No fakeid found for mp=%s", mp_name)
             return
         fakeid = search_results[0]["wpub_fakid"]
         need_refresh_fakeid = True
+        _append_log(target, status="progress", message=f"成功获取 fakeid: {fakeid[:8]}...", details={
+                    "step": "获取fakeid", "fakeid": fakeid})
     else:
         logging.info("Using cached fakeid for target=%s", mp_name)
+        _append_log(target, status="progress", message=f"使用缓存的 fakeid: {fakeid[:8]}...", details={
+                    "step": "获取fakeid", "fakeid": fakeid})
         # 如果 fakeid 已缓存但头像为空，尝试获取头像
         if not mp_avatar:
             logging.info("No cached avatar for target=%s, querying avatar...", mp_name)
+            _append_log(target, status="progress", message="查询头像", details={"step": "获取头像"})
             search_results = get_fakid(headers, token, mp_name)
             if search_results:
                 need_refresh_avatar = True
 
-    # 记录开始日志
-    _append_log(target, status="start", message="开始爬取")
-
     # 2. 拉取文章列表
+    _append_log(target, status="progress", message=f"开始拉取文章列表（{page_num}页）", details={
+                "step": "拉取文章", "page_num": page_num})
     titles, links, update_times = getAllUrl(
         page_num=page_num,
         start_page=0,
@@ -84,16 +98,23 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     # 如果使用缓存的 fakeid 但返回空结果，可能是 fakeid 失效，清除缓存并重新查询
     if not need_refresh_fakeid and (not titles or len(titles) == 0):
         logging.warning("Cached fakeid returned empty results for target=%s, clearing and retrying...", mp_name)
+        _append_log(target, status="progress", message="缓存的 fakeid 失效，重新查询", details={"step": "重新获取fakeid"})
         _clear_fakeid(target)
         # 重新查询 fakeid
         search_results = get_fakid(headers, token, mp_name)
         if not search_results:
-            _set_last_error(target, "fakeid 失效，重新查询失败")
+            error_msg = "fakeid 失效，重新查询失败"
+            _set_last_error(target, error_msg)
+            _append_log(target, status="error", message=error_msg, details={
+                        "step": "重新获取fakeid", "error_type": "fakeid_refresh_failed"})
             logging.error("Failed to refresh fakeid for mp=%s", mp_name)
             return
         fakeid = search_results[0]["wpub_fakid"]
         need_refresh_fakeid = True
+        _append_log(target, status="progress", message=f"重新获取 fakeid 成功: {fakeid[:8]}...", details={
+                    "step": "重新获取fakeid", "fakeid": fakeid})
         # 重试爬取
+        _append_log(target, status="progress", message="重试拉取文章列表", details={"step": "重试拉取文章"})
         titles, links, update_times = getAllUrl(
             page_num=page_num,
             start_page=0,
@@ -106,7 +127,10 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         )
         # 如果重试后仍然为空，记录错误
         if not titles or len(titles) == 0:
-            _set_last_error(target, "重新查询 fakeid 后仍无法获取文章")
+            error_msg = "重新查询 fakeid 后仍无法获取文章"
+            _set_last_error(target, error_msg)
+            _append_log(target, status="error", message=error_msg, details={
+                        "step": "重试拉取文章", "error_type": "no_articles_after_retry"})
             logging.warning("Still got empty results after refreshing fakeid for mp=%s", mp_name)
             return
 
@@ -133,18 +157,25 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         # 如果获取到头像URL，下载并转换为base64保存
         if "wpub_avatar" in result and result["wpub_avatar"]:
             avatar_url = result["wpub_avatar"]
+            _append_log(target, status="progress", message="开始下载头像", details={"step": "下载头像"})
             # 如果已经是base64格式（data URI），直接保存
             if avatar_url.startswith("data:image/"):
                 update_data["mp_avatar"] = avatar_url
+                _append_log(target, status="progress", message="头像已是base64格式，直接保存",
+                            details={"step": "保存头像", "avatar_fetched": True})
             else:
                 # 下载图片并转换为base64
                 logging.info("Attempting to download avatar for target=%s from URL: %s", mp_name, avatar_url)
                 avatar_base64 = _download_avatar_as_base64(avatar_url, headers)
                 if avatar_base64:
                     update_data["mp_avatar"] = avatar_base64
+                    _append_log(target, status="progress", message=f"头像下载成功（{len(avatar_base64)} 字符）", details={
+                                "step": "保存头像", "avatar_fetched": True, "avatar_size": len(avatar_base64)})
                     logging.info("Downloaded and converted avatar to base64 for target=%s (length: %d chars)",
                                  mp_name, len(avatar_base64))
                 else:
+                    _append_log(target, status="progress", message="头像下载失败",
+                                details={"step": "保存头像", "avatar_fetched": False})
                     logging.warning("Failed to download avatar for target=%s from URL: %s", mp_name, avatar_url)
         else:
             # 记录为什么没有获取到头像
@@ -200,6 +231,8 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         )
 
     # 3. 去重写入
+    _append_log(target, status="progress", message=f"开始保存文章到数据库（共 {len(articles)} 篇）", details={
+                "step": "保存文章", "articles_count": len(articles)})
     col = get_db()["articles"]
     inserted = 0
     for art in articles:
@@ -207,7 +240,13 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         if result.upserted_id:
             inserted += 1
     _set_last_error(target, None)
-    _append_log(target, status="finish", message=f"完成，获取 {len(articles)} 篇，新入库 {inserted}")
+
+    # 计算耗时
+    end_time = datetime.utcnow()
+    duration_ms = int((end_time - start_time).total_seconds() * 1000)
+
+    _append_log(target, status="finish", message=f"完成，获取 {len(articles)} 篇，新入库 {inserted} 篇",
+                details={"step": "完成", "articles_count": len(articles), "new_count": inserted, "duration_ms": duration_ms})
     logging.info("Crawled mp=%s got=%s new=%s", mp_name, len(articles), inserted)
 
 
@@ -333,16 +372,33 @@ def _clear_fakeid(target: Dict):
         logging.exception("Failed to clear fakeid for target=%s", target.get("_id"))
 
 
-def _append_log(target: Dict, status: str, message: str):
+def _append_log(target: Dict, status: str, message: str, details: Optional[Dict] = None):
+    """
+    记录爬取日志
+
+    Args:
+        target: 目标公众号配置
+        status: 状态 (start, progress, finish, error)
+        message: 消息内容
+        details: 详细信息字典，可包含：
+            - step: 步骤名称
+            - articles_count: 文章数量
+            - new_count: 新文章数量
+            - fakeid: fakeid值
+            - avatar_fetched: 是否获取头像
+            - error_type: 错误类型
+            - duration_ms: 耗时（毫秒）
+    """
     try:
-        get_db()["crawl_logs"].insert_one(
-            {
-                "target_id": target.get("_id"),
-                "target_name": target.get("name"),
-                "status": status,
-                "message": message,
-                "created_at": datetime.utcnow(),
-            }
-        )
+        log_data = {
+            "target_id": target.get("_id"),
+            "target_name": target.get("name"),
+            "status": status,
+            "message": message,
+            "created_at": datetime.utcnow(),
+        }
+        if details:
+            log_data.update(details)
+        get_db()["crawl_logs"].insert_one(log_data)
     except Exception:
         logging.exception("Failed to append crawl log for target=%s", target.get("_id"))
