@@ -1,5 +1,6 @@
 import atexit
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
 
@@ -15,6 +16,8 @@ from crawler.tasks import run_crawl
 
 scheduler = BackgroundScheduler()
 _app: Optional[Flask] = None
+# 使用线程池异步执行爬取任务，避免阻塞主线程
+_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="crawl")
 
 
 def setup_scheduler(app: Flask):
@@ -28,6 +31,7 @@ def setup_scheduler(app: Flask):
         logging.info("Scheduler started, timezone: Asia/Shanghai")
         # 注册退出时的清理函数
         atexit.register(lambda: scheduler.shutdown(wait=False) if scheduler.running else None)
+        atexit.register(lambda: _executor.shutdown(wait=True))
     refresh_jobs()
 
 
@@ -69,13 +73,10 @@ def refresh_jobs():
 
             _add_jobs_for_target(target)
 
-        # 立即执行错过的目标（每个目标只执行一次）
+        # 立即执行错过的目标（每个目标只执行一次，异步执行避免阻塞）
         for target_id in targets_to_execute:
-            try:
-                logging.info("Executing missed daily jobs for target %s", target_id)
-                trigger_target(target_id)
-            except Exception as exc:
-                logging.exception("Failed to execute missed daily jobs for target %s: %s", target_id, exc)
+            logging.info("Scheduling missed daily jobs for target %s", target_id)
+            _executor.submit(_execute_target_async, target_id)
 
         # 等待任务被调度器处理
         import time
@@ -97,6 +98,12 @@ def refresh_jobs():
 
 
 def trigger_target(target_id: str):
+    """触发目标爬取（异步执行，不阻塞）"""
+    _executor.submit(_execute_target_async, target_id)
+
+
+def _execute_target_async(target_id: str):
+    """异步执行目标爬取任务"""
     if _app is None:
         raise RuntimeError("Scheduler not initialized with app")
     with _app.app_context():
@@ -107,8 +114,10 @@ def trigger_target(target_id: str):
         if target.get("account_id"):
             account = get_db()["mp_accounts"].find_one({"_id": ObjectId(target["account_id"])})
         try:
+            logging.info("Starting crawl for target %s", target_id)
             run_crawl(target, account)
             get_db()["targets"].update_one({"_id": target["_id"]}, {"$set": {"last_run_at": datetime.utcnow()}})
+            logging.info("Completed crawl for target %s", target_id)
         except Exception as exc:
             logging.exception("Crawl failed for target %s: %s", target_id, exc)
             get_db()["targets"].update_one({"_id": ObjectId(target_id)}, {"$set": {"last_error": str(exc)}})
