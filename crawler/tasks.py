@@ -40,6 +40,17 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         return
     fakeid = search_results[0]["wpub_fakid"]
 
+    # 如果获取到头像，保存到targets表
+    if "wpub_avatar" in search_results[0] and search_results[0]["wpub_avatar"]:
+        try:
+            get_db()["targets"].update_one(
+                {"_id": target["_id"]},
+                {"$set": {"mp_avatar": search_results[0]["wpub_avatar"]}}
+            )
+            logging.info("Saved mp_avatar for target=%s", target.get("name"))
+        except Exception:
+            logging.exception("Failed to save mp_avatar for target=%s", target.get("_id"))
+
     # 记录开始日志
     _append_log(target, status="start", message="开始爬取")
 

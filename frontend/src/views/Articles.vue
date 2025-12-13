@@ -99,9 +99,13 @@
             <div class="filter-item">
               <label>视图模式</label>
               <el-radio-group v-model="articleView" size="default" @change="onArticleViewChange">
-                <el-radio-button label="list">
+                <el-radio-button label="table">
                   <el-icon><List /></el-icon>
                   <span>列表</span>
+                </el-radio-button>
+                <el-radio-button label="card">
+                  <el-icon><Grid /></el-icon>
+                  <span>图标</span>
                 </el-radio-button>
                 <el-radio-button label="mp">
                   <el-icon><DataAnalysis /></el-icon>
@@ -115,7 +119,63 @@
 
       <!-- 文章列表 -->
       <el-card class="content-card">
-        <template v-if="articleView === 'list'">
+        <!-- 列表视图（表格） -->
+        <template v-if="articleView === 'table'">
+          <div v-if="articlesPaged.length === 0" class="empty-state">
+            <el-icon class="empty-icon"><DocumentDelete /></el-icon>
+            <p>暂无文章数据</p>
+          </div>
+          <el-table v-else :data="articlesPaged" style="width: 100%" size="default" stripe border>
+            <el-table-column fixed type="index" label="序号" width="60" />
+            <el-table-column prop="mp_name" label="公众号" width="180">
+              <template #default="scope">
+                <div class="table-mp-cell">
+                  <img
+                    v-if="scope.row.mp_avatar"
+                    :src="scope.row.mp_avatar"
+                    class="mp-avatar-img"
+                    @error="handleAvatarError"
+                  />
+                  <el-icon v-else class="mp-avatar-icon"><User /></el-icon>
+                  <span>{{ scope.row.mp_name || "未知" }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="category" label="分类" width="120">
+              <template #default="scope">
+                <el-tag v-if="scope.row.category" size="small" type="info">{{ scope.row.category }}</el-tag>
+                <span v-else class="text-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="title" label="标题" min-width="300" show-overflow-tooltip />
+            <el-table-column label="发布时间" width="180">
+              <template #default="scope">{{ formatTime(scope.row.publish_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button size="small" type="primary" link @click="openArticle(scope.row.url)">
+                  <el-icon><Link /></el-icon>
+                  打开
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager-wrapper">
+            <el-pagination
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :page-size="articlesPageSize"
+              :page-sizes="[20, 50, 100]"
+              :total="sortedArticles.length"
+              :current-page="articlesPage"
+              @size-change="handleArticleSizeChange"
+              @current-change="handleArticleCurrentChange"
+            />
+          </div>
+        </template>
+
+        <!-- 图标视图（卡片） -->
+        <template v-else-if="articleView === 'card'">
           <div v-if="articlesPaged.length === 0" class="empty-state">
             <el-icon class="empty-icon"><DocumentDelete /></el-icon>
             <p>暂无文章数据</p>
@@ -129,13 +189,22 @@
             >
               <div class="article-header">
                 <div class="article-mp">
-                  <el-icon><User /></el-icon>
+                  <img
+                    v-if="article.mp_avatar"
+                    :src="article.mp_avatar"
+                    class="article-mp-avatar"
+                    @error="handleAvatarError"
+                  />
+                  <el-icon v-else class="article-mp-icon"><User /></el-icon>
                   <span>{{ article.mp_name || "未知" }}</span>
                 </div>
                 <div class="article-time">
                   <el-icon><Clock /></el-icon>
                   <span>{{ formatTime(article.publish_at) }}</span>
                 </div>
+              </div>
+              <div v-if="article.category" class="article-category">
+                <el-tag size="small" type="info">{{ article.category }}</el-tag>
               </div>
               <div class="article-title">{{ article.title }}</div>
               <div class="article-footer">
@@ -171,7 +240,13 @@
             >
               <div class="mp-card-content">
                 <div class="mp-avatar">
-                  <el-icon><UserFilled /></el-icon>
+                  <img
+                    v-if="mp.mp_avatar"
+                    :src="mp.mp_avatar"
+                    class="mp-avatar-img-large"
+                    @error="handleAvatarError"
+                  />
+                  <el-icon v-else><UserFilled /></el-icon>
                 </div>
                 <div class="mp-info">
                   <div class="mp-name">{{ mp.mp_name }}</div>
@@ -202,6 +277,7 @@ import {
   Refresh,
   Search,
   List,
+  Grid,
   DataAnalysis,
   DocumentDelete,
   User,
@@ -217,7 +293,7 @@ const loading = ref({ articles: false });
 const articleQuery = ref("");
 const selectedCategory = ref("");
 const todayOnly = ref(false);
-const articleView = ref("list");
+const articleView = ref("table"); // 默认列表视图
 const articleSort = ref("desc");
 const articlesPage = ref(1);
 const articlesPageSize = ref(20);
@@ -283,7 +359,7 @@ const mpSummary = computed(() => {
     const key = item.mp_name || "未知";
     const ts = new Date(item.publish_at || item.created_at || 0).getTime();
     if (!map.has(key)) {
-      map.set(key, { mp_name: key, count: 0, latest: 0 });
+      map.set(key, { mp_name: key, count: 0, latest: 0, mp_avatar: item.mp_avatar });
     }
     const obj = map.get(key);
     obj.count += 1;
@@ -300,6 +376,11 @@ const openArticle = (url) => {
   if (url) {
     window.open(url, "_blank");
   }
+};
+
+const handleAvatarError = (event) => {
+  // 头像加载失败时隐藏图片
+  event.target.style.display = "none";
 };
 
 const handleArticleSizeChange = (val) => {
@@ -462,6 +543,30 @@ onMounted(() => {
   margin: 0;
 }
 
+/* 表格样式 */
+.table-mp-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mp-avatar-icon {
+  width: 32px;
+  height: 32px;
+  color: #909399;
+}
+
+.text-muted {
+  color: #909399;
+}
+
 /* 文章网格 */
 .articles-grid {
   display: grid;
@@ -496,11 +601,31 @@ onMounted(() => {
   color: #909399;
 }
 
-.article-mp,
+.article-mp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.article-mp-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.article-mp-icon {
+  font-size: 18px;
+}
+
 .article-time {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.article-category {
+  margin-top: -4px;
 }
 
 .article-title {
@@ -557,6 +682,13 @@ onMounted(() => {
   color: #fff;
   font-size: 24px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.mp-avatar-img-large {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .mp-info {

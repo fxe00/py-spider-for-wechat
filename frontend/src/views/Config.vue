@@ -102,7 +102,7 @@
             background
             small
             layout="total, sizes, prev, pager, next, jumper"
-            :page-sizes="[5, 8, 10, 20]"
+            :page-sizes="[20, 50, 100]"
             :page-size="targetsPageSize"
             :total="targets.length"
             :current-page="targetsPage"
@@ -230,7 +230,7 @@ const targetQuery = ref("");
 const accountsPage = ref(1);
 const accountsPageSize = ref(8);
 const targetsPage = ref(1);
-const targetsPageSize = ref(8);
+const targetsPageSize = ref(20);
 
 const accountDialog = reactive({
   visible: false,

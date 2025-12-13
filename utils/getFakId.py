@@ -118,14 +118,21 @@ def get_fakid(headers, tok, query, retries=MAX_RETRIES):
             logging.warning(f"wechat response missing 'list' field: {dic}")
             return []
 
-        # 获取公众号名称、fakeid
-        wpub_list = [
-            {
+        # 获取公众号名称、fakeid、头像
+        wpub_list = []
+        for item in dic['list']:
+            wpub_info = {
                 'wpub_name': item['nickname'],
                 'wpub_fakid': item['fakeid']
             }
-            for item in dic['list']
-        ]
+            # 尝试获取头像URL（微信API可能返回的字段名）
+            if 'round_head_img' in item:
+                wpub_info['wpub_avatar'] = item['round_head_img']
+            elif 'headimg' in item:
+                wpub_info['wpub_avatar'] = item['headimg']
+            elif 'avatar' in item:
+                wpub_info['wpub_avatar'] = item['avatar']
+            wpub_list.append(wpub_info)
 
         return wpub_list
 
