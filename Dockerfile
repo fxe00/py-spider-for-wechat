@@ -7,7 +7,9 @@ RUN npm run build
 
 FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 WORKDIR /app
 COPY requirements-backend.txt .
 RUN pip install --no-cache-dir -r requirements-backend.txt

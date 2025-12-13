@@ -19,7 +19,10 @@ def setup_scheduler(app: Flask):
     global _app
     _app = app
     scheduler.configure(timezone="Asia/Shanghai")
-    scheduler.start()
+    if not scheduler.running:
+        scheduler.start()
+        import time
+        time.sleep(0.5)  # 等待调度器完全启动
     refresh_jobs()
     app.teardown_appcontext(lambda _exc=None: scheduler.shutdown(wait=False) if scheduler.running else None)
 
@@ -105,6 +108,9 @@ def _add_jobs_for_target(target: dict):
             max_instances=1,
             misfire_grace_time=300,
         )
+        next_run = scheduler.get_job(job["id"])
+        if next_run:
+            logging.info("Job %s next run: %s", job["id"], next_run.next_run_time)
 
 
 def _interval_to_minutes(target: dict):
