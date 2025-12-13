@@ -67,17 +67,18 @@ def _add_jobs_for_target(target: dict):
                 }
             )
     elif mode == "daily":
-        times = target.get("daily_times") or ["09:00", "21:00"]
+        times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
         for idx, t in enumerate(times):
             try:
                 hh, mm = t.split(":")
-                cron = CronTrigger(hour=int(hh), minute=int(mm))
+                cron = CronTrigger(hour=int(hh), minute=int(mm), timezone="Asia/Shanghai")
                 jobs.append(
                     {
                         "id": f"{target_id}-{idx}",
                         "trigger": cron,
                     }
                 )
+                logging.info("Added daily job for target %s at %s (job id: %s-%s)", target_id, t, target_id, idx)
             except Exception as exc:
                 logging.warning("Invalid daily time %s for target %s: %s", t, target_id, exc)
     elif mode == "cron":

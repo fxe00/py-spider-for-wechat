@@ -3,7 +3,7 @@ from bson import ObjectId
 
 from backend.db import get_db
 from backend.security import jwt_required
-from backend.scheduler import trigger_target
+from backend.scheduler import trigger_target, refresh_jobs
 
 bp = Blueprint("targets", __name__, url_prefix="/api/targets")
 
@@ -45,7 +45,7 @@ def create_target():
     schedule_mode = body.get("schedule_mode") or "daily"
     interval_value = body.get("interval_value")
     interval_unit = body.get("interval_unit")
-    daily_times = body.get("daily_times") or ["09:00", "21:00"]
+    daily_times = body.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
     cron_expr = (body.get("cron_expr") or "").strip()
     freq = body.get("freq_minutes")
     account_id = body.get("account_id")
@@ -67,6 +67,7 @@ def create_target():
     }
     result = get_db()["targets"].insert_one(payload)
     payload["_id"] = result.inserted_id
+    refresh_jobs()
     return jsonify(_serialize(payload)), 201
 
 
@@ -96,6 +97,7 @@ def update_target(id):
     doc = get_db()["targets"].find_one({"_id": ObjectId(id)})
     if not doc:
         return jsonify({"message": "未找到记录"}), 404
+    refresh_jobs()
     return jsonify(_serialize(doc))
 
 
@@ -103,6 +105,7 @@ def update_target(id):
 @jwt_required
 def delete_target(id):
     get_db()["targets"].delete_one({"_id": ObjectId(id)})
+    refresh_jobs()
     return jsonify({"deleted": True})
 
 
