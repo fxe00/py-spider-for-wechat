@@ -363,7 +363,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "../stores/auth";
 import { SettingOutlined, FileTextOutlined, ProfileOutlined } from "@ant-design/icons-vue";
 
-const menuKeys = ref(["config"]);
+const menuKeys = ref(["articles"]);
 const accounts = ref([]);
 const targets = ref([]);
 const articles = ref([]);
@@ -371,7 +371,7 @@ const logs = ref([]);
 const loading = ref({ accounts: false, targets: false, articles: false, logs: false });
 const triggerLoading = reactive({});
 const auth = useAuthStore();
-const activeTab = ref("config");
+const activeTab = ref("articles");
 const accountQuery = ref("");
 const targetQuery = ref("");
 const articleQuery = ref("");
