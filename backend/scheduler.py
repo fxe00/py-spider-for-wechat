@@ -42,8 +42,38 @@ def refresh_jobs():
 
         scheduler.remove_all_jobs()
         targets = list(get_db()["targets"].find({"enabled": True}))
+
+        # 收集需要立即执行的目标（daily 模式且今天的执行时间已过）
+        tz = pytz.timezone("Asia/Shanghai")
+        current_time = datetime.now(tz)
+        today = current_time.date()
+        targets_to_execute = set()
+
         for target in targets:
+            mode = target.get("schedule_mode") or "daily"
+            if mode == "daily":
+                times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
+                for t in times:
+                    try:
+                        hh, mm = t.split(":")
+                        scheduled_time = tz.localize(datetime.combine(
+                            today, datetime.min.time().replace(hour=int(hh), minute=int(mm))))
+                        if scheduled_time < current_time:
+                            # 今天的执行时间已经过去
+                            targets_to_execute.add(str(target["_id"]))
+                            break  # 只要有一个时间点过去，就执行一次
+                    except Exception:
+                        pass
+
             _add_jobs_for_target(target)
+
+        # 立即执行错过的目标（每个目标只执行一次）
+        for target_id in targets_to_execute:
+            try:
+                logging.info("Executing missed daily jobs for target %s", target_id)
+                trigger_target(target_id)
+            except Exception as exc:
+                logging.exception("Failed to execute missed daily jobs for target %s: %s", target_id, exc)
 
         # 等待任务被调度器处理
         import time
