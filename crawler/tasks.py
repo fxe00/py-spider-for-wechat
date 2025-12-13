@@ -13,7 +13,7 @@ USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
 def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     """
     结合现有 utils 实现的简易爬取：
-    1) 通过 get_fakid 找到公众号 fakeid
+    1) 优先使用缓存的 fakeid，如果没有或失效则查询并保存
     2) 用 getAllUrl 拉取最近 page_num 页（每页5篇）基础信息
     3) 去重写入 Mongo articles
     TODO: 若需正文，可对 links 再调用内容抓取模块。
@@ -32,24 +32,31 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     headers = _build_headers(cookie)
     settings = get_settings()
 
-    # 1. 查询 fakeid
-    search_results = get_fakid(headers, token, mp_name)
-    if not search_results:
-        _set_last_error(target, "未找到 fakeid，可能 token/cookie 失效")
-        logging.warning("No fakeid found for mp=%s", mp_name)
-        return
-    fakeid = search_results[0]["wpub_fakid"]
+    # 1. 获取或查询 fakeid（优先使用缓存的）
+    fakeid = target.get("fakeid")
+    mp_avatar = target.get("mp_avatar")
+    need_refresh_fakeid = False
+    need_refresh_avatar = False
+    search_results = None  # 用于保存查询结果，以便后续保存头像
 
-    # 如果获取到头像，保存到targets表
-    if "wpub_avatar" in search_results[0] and search_results[0]["wpub_avatar"]:
-        try:
-            get_db()["targets"].update_one(
-                {"_id": target["_id"]},
-                {"$set": {"mp_avatar": search_results[0]["wpub_avatar"]}}
-            )
-            logging.info("Saved mp_avatar for target=%s", target.get("name"))
-        except Exception:
-            logging.exception("Failed to save mp_avatar for target=%s", target.get("_id"))
+    if not fakeid:
+        # 如果没有缓存的 fakeid，查询并保存
+        logging.info("No cached fakeid for target=%s, querying...", mp_name)
+        search_results = get_fakid(headers, token, mp_name)
+        if not search_results:
+            _set_last_error(target, "未找到 fakeid，可能 token/cookie 失效")
+            logging.warning("No fakeid found for mp=%s", mp_name)
+            return
+        fakeid = search_results[0]["wpub_fakid"]
+        need_refresh_fakeid = True
+    else:
+        logging.info("Using cached fakeid for target=%s", mp_name)
+        # 如果 fakeid 已缓存但头像为空，尝试获取头像
+        if not mp_avatar:
+            logging.info("No cached avatar for target=%s, querying avatar...", mp_name)
+            search_results = get_fakid(headers, token, mp_name)
+            if search_results:
+                need_refresh_avatar = True
 
     # 记录开始日志
     _append_log(target, status="start", message="开始爬取")
@@ -65,6 +72,58 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
         retries=settings.request_retries,
         timeout=settings.request_timeout,
     )
+
+    # 如果使用缓存的 fakeid 但返回空结果，可能是 fakeid 失效，清除缓存并重新查询
+    if not need_refresh_fakeid and (not titles or len(titles) == 0):
+        logging.warning("Cached fakeid returned empty results for target=%s, clearing and retrying...", mp_name)
+        _clear_fakeid(target)
+        # 重新查询 fakeid
+        search_results = get_fakid(headers, token, mp_name)
+        if not search_results:
+            _set_last_error(target, "fakeid 失效，重新查询失败")
+            logging.error("Failed to refresh fakeid for mp=%s", mp_name)
+            return
+        fakeid = search_results[0]["wpub_fakid"]
+        need_refresh_fakeid = True
+        # 重试爬取
+        titles, links, update_times = getAllUrl(
+            page_num=page_num,
+            start_page=0,
+            fad=fakeid,
+            tok=token,
+            headers=headers,
+            delay_range=(settings.request_min_delay, settings.request_max_delay),
+            retries=settings.request_retries,
+            timeout=settings.request_timeout,
+        )
+        # 如果重试后仍然为空，记录错误
+        if not titles or len(titles) == 0:
+            _set_last_error(target, "重新查询 fakeid 后仍无法获取文章")
+            logging.warning("Still got empty results after refreshing fakeid for mp=%s", mp_name)
+            return
+
+    # 如果获取到新的 fakeid 或头像，保存到 targets 表
+    if (need_refresh_fakeid or need_refresh_avatar) and search_results:
+        update_data = {}
+        if need_refresh_fakeid:
+            update_data["fakeid"] = fakeid
+        # 如果获取到头像，也保存
+        if "wpub_avatar" in search_results[0] and search_results[0]["wpub_avatar"]:
+            update_data["mp_avatar"] = search_results[0]["wpub_avatar"]
+
+        if update_data:
+            try:
+                get_db()["targets"].update_one(
+                    {"_id": target["_id"]},
+                    {"$set": update_data}
+                )
+                if need_refresh_fakeid:
+                    logging.info("Saved fakeid and avatar for target=%s", target.get("name"))
+                else:
+                    logging.info("Saved avatar for target=%s", target.get("name"))
+            except Exception:
+                logging.exception("Failed to save fakeid/avatar for target=%s", target.get("_id"))
+
     articles = []
     for title, link, ts in zip(titles, links, update_times):
         publish_at = datetime.utcfromtimestamp(int(ts))
@@ -108,6 +167,18 @@ def _set_last_error(target: Dict, message: Optional[str]):
         get_db()["targets"].update_one({"_id": target["_id"]}, {"$set": {"last_error": message}})
     except Exception:
         logging.exception("Failed to update last_error for target=%s", target.get("_id"))
+
+
+def _clear_fakeid(target: Dict):
+    """清除缓存的 fakeid"""
+    try:
+        get_db()["targets"].update_one(
+            {"_id": target["_id"]},
+            {"$unset": {"fakeid": ""}}
+        )
+        logging.info("Cleared cached fakeid for target=%s", target.get("name"))
+    except Exception:
+        logging.exception("Failed to clear fakeid for target=%s", target.get("_id"))
 
 
 def _append_log(target: Dict, status: str, message: str):
