@@ -72,6 +72,14 @@ def list_logs():
     if status:
         query["status"] = status
 
+    # 计算统计信息（基于查询条件）
+    stats = {
+        "total": 0,
+        "success": 0,
+        "error": 0,
+        "running": 0,
+    }
+
     if latest_only:
         # 只返回每个任务的最新日志（按 target_id 分组，取最新的）
         pipeline = [
@@ -89,16 +97,59 @@ def list_logs():
         cursor = get_db()["crawl_logs"].aggregate(pipeline)
         all_logs = list(cursor)
         total = len(all_logs)
+
+        # 计算统计信息
+        stats["total"] = total
+        for log in all_logs:
+            status = log.get("status")
+            if status == "finish":
+                stats["success"] += 1
+            elif status == "error":
+                stats["error"] += 1
+            elif status in ("start", "progress"):
+                stats["running"] += 1
+
         # 手动分页
         skip = (page - 1) * page_size
         paged_logs = all_logs[skip:skip + page_size]
-        return jsonify({"total": total, "items": [_serialize(x) for x in paged_logs]})
+        return jsonify({
+            "total": total,
+            "items": [_serialize(x) for x in paged_logs],
+            "stats": stats
+        })
     else:
         # 返回所有日志（包括所有步骤）
         total = get_db()["crawl_logs"].count_documents(query)
+
+        # 计算统计信息（需要查询所有匹配的日志）
+        stats_pipeline = [
+            {"$match": query},
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+        stats_result = list(get_db()["crawl_logs"].aggregate(stats_pipeline))
+        stats["total"] = total
+        for item in stats_result:
+            status = item.get("_id")
+            count = item.get("count", 0)
+            if status == "finish":
+                stats["success"] = count
+            elif status == "error":
+                stats["error"] = count
+            elif status in ("start", "progress"):
+                stats["running"] += count
+
         skip = (page - 1) * page_size
         cursor = get_db()["crawl_logs"].find(query).sort("created_at", -1).skip(skip).limit(page_size)
-        return jsonify({"total": total, "items": [_serialize(x) for x in cursor]})
+        return jsonify({
+            "total": total,
+            "items": [_serialize(x) for x in cursor],
+            "stats": stats
+        })
 
 
 @bp.route("/cleanup", methods=["POST"])

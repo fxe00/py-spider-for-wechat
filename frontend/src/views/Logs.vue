@@ -9,7 +9,7 @@
               <el-icon><Document /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ logs.length }}</div>
+              <div class="stat-value">{{ totalLogs }}</div>
               <div class="stat-label">总日志数</div>
             </div>
           </div>
@@ -20,7 +20,7 @@
               <el-icon><CircleCheck /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ successCount }}</div>
+              <div class="stat-value">{{ logStats.success }}</div>
               <div class="stat-label">成功次数</div>
             </div>
           </div>
@@ -31,7 +31,7 @@
               <el-icon><CircleClose /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ errorCount }}</div>
+              <div class="stat-value">{{ logStats.error }}</div>
               <div class="stat-label">失败次数</div>
             </div>
           </div>
@@ -42,7 +42,7 @@
               <el-icon><Loading /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ runningCount }}</div>
+              <div class="stat-value">{{ logStats.running }}</div>
               <div class="stat-label">进行中</div>
             </div>
           </div>
@@ -298,6 +298,12 @@ import Layout from "./Layout.vue";
 
 const logs = ref([]);
 const totalLogs = ref(0); // 总日志数（从后端获取）
+const logStats = ref({
+  total: 0,
+  success: 0,
+  error: 0,
+  running: 0,
+}); // 统计信息（从后端获取）
 const loading = ref({ logs: false, cleanup: false });
 const logsPage = ref(1);
 const logsPageSize = ref(20);
@@ -324,6 +330,10 @@ const fetchLogs = async () => {
     const { data } = await http.get("/logs", { params });
     logs.value = data.items || [];
     totalLogs.value = data.total || 0;
+    // 更新统计信息
+    if (data.stats) {
+      logStats.value = data.stats;
+    }
   } catch {
     ElMessage.error("获取日志失败");
   } finally {
@@ -331,18 +341,7 @@ const fetchLogs = async () => {
   }
 };
 
-// 统计计算
-const successCount = computed(() => {
-  return logs.value.filter((log) => log.status === "finish").length;
-});
-
-const errorCount = computed(() => {
-  return logs.value.filter((log) => log.status === "error").length;
-});
-
-const runningCount = computed(() => {
-  return logs.value.filter((log) => log.status === "start" || log.status === "progress").length;
-});
+// 统计信息已从后端获取，移除前端计算
 
 // 移除前端筛选和分页，使用后端分页
 
