@@ -109,7 +109,7 @@ def _add_jobs_for_target(target: dict):
             misfire_grace_time=300,
         )
         next_run = scheduler.get_job(job["id"])
-        if next_run:
+        if next_run and hasattr(next_run, "next_run_time") and next_run.next_run_time:
             logging.info("Job %s next run: %s", job["id"], next_run.next_run_time)
 
 
