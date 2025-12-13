@@ -9,7 +9,7 @@
               <el-icon><Document /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ sortedArticles.length }}</div>
+              <div class="stat-value">{{ totalArticles }}</div>
               <div class="stat-label">总文章数</div>
             </div>
           </div>
@@ -135,12 +135,12 @@
       <!-- 文章列表 -->
       <el-card class="content-card">
         <!-- 列表视图（表格） -->
-        <template v-if="articleView === 'table'">
-          <div v-if="articlesPaged.length === 0" class="empty-state">
-            <el-icon class="empty-icon"><DocumentDelete /></el-icon>
-            <p>暂无文章数据</p>
-          </div>
-          <el-table v-else :data="articlesPaged" style="width: 100%" size="default" stripe border>
+            <template v-if="articleView === 'table'">
+              <div v-if="articles.length === 0" class="empty-state">
+                <el-icon class="empty-icon"><DocumentDelete /></el-icon>
+                <p>暂无文章数据</p>
+              </div>
+              <el-table v-else :data="articles" style="width: 100%" size="default" stripe border>
             <el-table-column fixed type="index" label="序号" width="60" />
             <el-table-column prop="mp_name" label="公众号" width="180">
               <template #default="scope">
@@ -183,7 +183,7 @@
               layout="total, sizes, prev, pager, next, jumper"
               :page-size="articlesPageSize"
               :page-sizes="[20, 50, 100]"
-              :total="sortedArticles.length"
+              :total="totalArticles"
               :current-page="articlesPage"
               @size-change="handleArticleSizeChange"
               @current-change="handleArticleCurrentChange"
@@ -193,13 +193,13 @@
 
         <!-- 图标视图（卡片） -->
         <template v-else-if="articleView === 'card'">
-          <div v-if="articlesPaged.length === 0" class="empty-state">
+          <div v-if="articles.length === 0" class="empty-state">
             <el-icon class="empty-icon"><DocumentDelete /></el-icon>
             <p>暂无文章数据</p>
           </div>
           <div v-else class="articles-grid">
             <div
-              v-for="article in articlesPaged"
+              v-for="article in articles"
               :key="article.id"
               class="article-card"
               @click="openArticle(article.url)"
@@ -240,7 +240,7 @@
               layout="total, sizes, prev, pager, next, jumper"
               :page-size="articlesPageSize"
               :page-sizes="[20, 50, 100]"
-              :total="sortedArticles.length"
+              :total="totalArticles"
               :current-page="articlesPage"
               @size-change="handleArticleSizeChange"
               @current-change="handleArticleCurrentChange"
@@ -310,6 +310,7 @@ import {
 import Layout from "./Layout.vue";
 
 const articles = ref([]);
+const totalArticles = ref(0); // 总文章数（从后端获取）
 const categories = ref([]);
 const mpNames = ref([]);
 const loading = ref({ articles: false });
@@ -345,7 +346,11 @@ const fetchMpNames = async () => {
 const fetchArticles = async () => {
   loading.value.articles = true;
   try {
-    const params = { page: 1, page_size: 200, q: articleQuery.value };
+    const params = {
+      page: articlesPage.value,
+      page_size: articlesPageSize.value,
+      q: articleQuery.value,
+    };
     if (selectedCategory.value) {
       params.category = selectedCategory.value;
     }
@@ -360,6 +365,7 @@ const fetchArticles = async () => {
     }
     const { data } = await http.get("/articles", { params });
     articles.value = data.items || [];
+    totalArticles.value = data.total || 0;
   } catch {
     ElMessage.error("获取文章失败");
   } finally {
@@ -367,31 +373,21 @@ const fetchArticles = async () => {
   }
 };
 
-const sortedArticles = computed(() => {
-  const arr = [...(articles.value || [])];
-  return arr.sort((a, b) => {
-    const ta = new Date(a.publish_at || a.created_at || 0).getTime();
-    const tb = new Date(b.publish_at || b.created_at || 0).getTime();
-    return articleSort.value === "asc" ? ta - tb : tb - ta;
-  });
-});
-
 const todayCount = computed(() => {
+  // 今日文章数需要单独查询，这里暂时使用当前页的数据估算
+  // 如果需要精确值，可以添加一个单独的API
   const today = dayjs().startOf("day");
-  return sortedArticles.value.filter((article) => {
+  return articles.value.filter((article) => {
     const publishTime = dayjs(article.publish_at);
     return publishTime.isSame(today, "day");
   }).length;
 });
 
-const articlesPaged = computed(() => {
-  const start = (articlesPage.value - 1) * articlesPageSize.value;
-  return sortedArticles.value.slice(start, start + articlesPageSize.value);
-});
-
 const mpSummary = computed(() => {
+  // 公众号汇总视图需要所有数据，这里暂时使用当前页数据
+  // 如果需要完整汇总，可以添加一个单独的API
   const map = new Map();
-  sortedArticles.value.forEach((item) => {
+  articles.value.forEach((item) => {
     const key = item.mp_name || "未知";
     const ts = new Date(item.publish_at || item.created_at || 0).getTime();
     if (!map.has(key)) {
@@ -431,10 +427,12 @@ const handleAvatarError = (event) => {
 const handleArticleSizeChange = (val) => {
   articlesPageSize.value = val;
   articlesPage.value = 1;
+  fetchArticles(); // 重新获取数据
 };
 
 const handleArticleCurrentChange = (val) => {
   articlesPage.value = val;
+  fetchArticles(); // 重新获取数据
 };
 
 onMounted(() => {

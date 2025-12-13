@@ -246,6 +246,10 @@
                   {{ logDetailDialog.data.avatar_fetched ? "成功" : "失败" }}
                 </el-tag>
               </el-descriptions-item>
+              <el-descriptions-item v-else label="头像状态">
+                <el-tag type="info" size="small">未记录</el-tag>
+                <span class="text-muted" style="margin-left: 8px; font-size: 12px;">（可能已在之前获取）</span>
+              </el-descriptions-item>
               <el-descriptions-item v-if="logDetailDialog.data.avatar_size" label="头像大小">
                 {{ formatSize(logDetailDialog.data.avatar_size) }}
               </el-descriptions-item>

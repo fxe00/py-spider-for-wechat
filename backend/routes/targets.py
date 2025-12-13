@@ -39,11 +39,22 @@ def _serialize(doc):
 @jwt_required
 def list_targets():
     q = (request.args.get("q") or "").strip()
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("page_size", 20))
+
     query = {}
     if q:
         query["name"] = {"$regex": q, "$options": "i"}
-    data = [_serialize(x) for x in get_db()["targets"].find(query).sort("created_at", -1)]
-    return jsonify(data)
+
+    # 计算总数
+    total = get_db()["targets"].count_documents(query)
+
+    # 后端分页：使用 MongoDB 的 skip 和 limit
+    skip = (page - 1) * page_size
+    cursor = get_db()["targets"].find(query).sort("created_at", -1).skip(skip).limit(page_size)
+    data = [_serialize(x) for x in cursor]
+
+    return jsonify({"total": total, "items": data})
 
 
 @bp.route("", methods=["POST"])

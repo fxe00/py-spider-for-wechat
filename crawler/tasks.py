@@ -245,8 +245,18 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     end_time = datetime.utcnow()
     duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
+    # 检查头像是否存在（可能之前已经获取过）
+    final_target = get_db()["targets"].find_one({"_id": target["_id"]}, {"mp_avatar": 1})
+    avatar_exists = bool(final_target and final_target.get("mp_avatar"))
+
     _append_log(target, status="finish", message=f"完成，获取 {len(articles)} 篇，新入库 {inserted} 篇",
-                details={"step": "完成", "articles_count": len(articles), "new_count": inserted, "duration_ms": duration_ms})
+                details={
+                    "step": "完成",
+                    "articles_count": len(articles),
+                    "new_count": inserted,
+                    "duration_ms": duration_ms,
+                    "avatar_fetched": avatar_exists  # 记录头像是否存在
+    })
     logging.info("Crawled mp=%s got=%s new=%s", mp_name, len(articles), inserted)
 
 

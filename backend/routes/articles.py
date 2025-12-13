@@ -58,12 +58,16 @@ def list_articles():
             # 如果没有找到匹配的目标，返回空结果
             return jsonify({"total": 0, "items": []})
 
-    cursor = get_db()["articles"].find(query).sort("publish_at", -1)
+    # 先计算总数（用于分页显示）
     total = get_db()["articles"].count_documents(query)
 
-    # 先获取所有文章的target_id（不限制数量，用于批量查询targets）
-    all_docs = list(cursor)
-    target_ids = list(set([ObjectId(doc.get("target_id")) for doc in all_docs if doc.get("target_id")]))
+    # 后端分页：使用 MongoDB 的 skip 和 limit
+    skip = (page - 1) * page_size
+    cursor = get_db()["articles"].find(query).sort("publish_at", -1).skip(skip).limit(page_size)
+    paged_docs = list(cursor)
+
+    # 获取当前页文章的target_id（只查询当前页的数据）
+    target_ids = list(set([ObjectId(doc.get("target_id")) for doc in paged_docs if doc.get("target_id")]))
 
     # 批量查询targets获取分类和头像（通过target_id）
     targets_map = {}
@@ -73,7 +77,7 @@ def list_articles():
         targets_map = {str(t["_id"]): {"category": t.get("category"), "mp_avatar": t.get("mp_avatar")} for t in targets}
 
     # 备用方案：通过mp_name查找头像（用于处理target_id不匹配的情况）
-    mp_names = list(set([doc.get("mp_name") for doc in all_docs if doc.get("mp_name")]))
+    mp_names = list(set([doc.get("mp_name") for doc in paged_docs if doc.get("mp_name")]))
     mp_name_to_avatar = {}
     if mp_names:
         targets_by_name = list(get_db()["targets"].find({"name": {"$in": mp_names}},
@@ -84,10 +88,7 @@ def list_articles():
                 "category": t.get("category")
             }
 
-    # 分页处理
-    start = (page - 1) * page_size
-    paged_docs = all_docs[start:start + page_size]
-
+    # 序列化数据
     data = []
     for doc in paged_docs:
         target_id_str = str(doc.get("target_id")) if doc.get("target_id") else None

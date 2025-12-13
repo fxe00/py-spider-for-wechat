@@ -80,7 +80,7 @@
             </template>
           </el-input>
         </div>
-        <el-table :data="accountsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+        <el-table :data="accounts" style="width: 100%; margin-top: 10px" size="small" stripe border>
           <el-table-column fixed type="index" label="序号" width="60" />
           <el-table-column prop="name" label="名称" width="160" />
           <el-table-column label="更新时间" width="180">
@@ -141,7 +141,7 @@
             </template>
           </el-input>
         </div>
-        <el-table :data="targetsPaged" style="width: 100%; margin-top: 10px" size="small" stripe border>
+        <el-table :data="targets" style="width: 100%; margin-top: 10px" size="small" stripe border>
           <el-table-column fixed type="index" label="序号" width="60" />
           <el-table-column label="名称" width="200">
             <template #default="scope">
@@ -194,7 +194,7 @@
             layout="total, sizes, prev, pager, next, jumper"
             :page-sizes="[20, 50, 100]"
             :page-size="targetsPageSize"
-            :total="targets.length"
+            :total="totalTargets"
             :current-page="targetsPage"
             @size-change="handleTargetSizeChange"
             @current-change="handleTargetCurrentChange"
@@ -390,6 +390,7 @@ import Layout from "./Layout.vue";
 
 const accounts = ref([]);
 const targets = ref([]);
+const totalTargets = ref(0); // 公众号配置总数（从后端获取）
 const categories = ref([]);
 const loading = ref({ accounts: false, targets: false });
 const triggerLoading = reactive({});
@@ -450,8 +451,15 @@ const fetchAccounts = async () => {
 const fetchTargets = async () => {
   loading.value.targets = true;
   try {
-    const { data } = await http.get("/targets", { params: { q: targetQuery.value } });
-    targets.value = data;
+    const { data } = await http.get("/targets", {
+      params: {
+        q: targetQuery.value,
+        page: targetsPage.value,
+        page_size: targetsPageSize.value,
+      },
+    });
+    targets.value = data.items || [];
+    totalTargets.value = data.total || 0;
   } catch {
     ElMessage.error("获取公众号配置失败");
   } finally {
@@ -689,15 +697,7 @@ const removeDailyTime = () => {
   }
 };
 
-const accountsPaged = computed(() => {
-  const start = (accountsPage.value - 1) * accountsPageSize.value;
-  return accounts.value.slice(start, start + accountsPageSize.value);
-});
-
-const targetsPaged = computed(() => {
-  const start = (targetsPage.value - 1) * targetsPageSize.value;
-  return targets.value.slice(start, start + targetsPageSize.value);
-});
+// 移除前端分页，使用后端分页
 
 const enabledTargets = computed(() => {
   return targets.value.filter(t => t.enabled !== false).length;
@@ -717,9 +717,11 @@ const handleAccountCurrentChange = (val) => {
 const handleTargetSizeChange = (val) => {
   targetsPageSize.value = val;
   targetsPage.value = 1;
+  fetchTargets(); // 重新获取数据
 };
 const handleTargetCurrentChange = (val) => {
   targetsPage.value = val;
+  fetchTargets(); // 重新获取数据
 };
 
 onMounted(() => {
