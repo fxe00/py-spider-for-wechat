@@ -49,7 +49,7 @@ def refresh_jobs():
         scheduler.remove_all_jobs()
         targets = list(get_db()["targets"].find({"enabled": True}))
 
-        # 收集需要立即执行的目标（daily 模式且今天的执行时间已过）
+        # 收集需要立即执行的目标（daily 模式且今天的执行时间已过，但今天还未执行过）
         tz = pytz.timezone("Asia/Shanghai")
         current_time = datetime.now(tz)
         today = current_time.date()
@@ -58,6 +58,27 @@ def refresh_jobs():
         for target in targets:
             mode = target.get("schedule_mode") or "daily"
             if mode == "daily":
+                # 检查今天是否已经执行过
+                last_run_at = target.get("last_run_at")
+                already_ran_today = False
+                if last_run_at:
+                    # 将 UTC 时间转换为上海时区
+                    if isinstance(last_run_at, datetime):
+                        # 如果已经是 datetime 对象，转换为上海时区
+                        if last_run_at.tzinfo is None:
+                            # 假设是 UTC
+                            last_run_at_tz = pytz.UTC.localize(last_run_at).astimezone(tz)
+                        else:
+                            last_run_at_tz = last_run_at.astimezone(tz)
+                        # 检查是否是今天
+                        if last_run_at_tz.date() == today:
+                            already_ran_today = True
+
+                # 如果今天已经执行过，跳过
+                if already_ran_today:
+                    continue
+
+                # 检查是否有执行时间已过
                 times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
                 for t in times:
                     try:
@@ -65,7 +86,7 @@ def refresh_jobs():
                         scheduled_time = tz.localize(datetime.combine(
                             today, datetime.min.time().replace(hour=int(hh), minute=int(mm))))
                         if scheduled_time < current_time:
-                            # 今天的执行时间已经过去
+                            # 今天的执行时间已经过去，且今天还未执行过
                             targets_to_execute.add(str(target["_id"]))
                             break  # 只要有一个时间点过去，就执行一次
                     except Exception:
