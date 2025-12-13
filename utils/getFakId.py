@@ -55,6 +55,7 @@ API接口说明:
 # @File : getFakId.py
 # @Software: PyCharm
 
+import logging
 import requests
 
 
@@ -82,6 +83,18 @@ def get_fakid(headers, tok, query):
     r = requests.get(url, headers=headers, params=data)
     # 解析json
     dic = r.json()
+    
+    # 检查响应是否包含错误
+    if 'ret' in dic and dic['ret'] != 0:
+        error_msg = dic.get('errmsg', '未知错误')
+        logging.warning(f"wechat returned error ret={dic['ret']}, msg={error_msg}")
+        return []
+    
+    # 检查响应中是否包含 list 字段
+    if 'list' not in dic:
+        logging.warning(f"wechat response missing 'list' field: {dic}")
+        return []
+    
     # 获取公众号名称、fakeid
     wpub_list = [
         {
