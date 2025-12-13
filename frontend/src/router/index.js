@@ -20,6 +20,9 @@ router.beforeEach((to, _from, next) => {
   const auth = useAuthStore();
   if (to.path !== "/login" && !auth.token) {
     next("/login");
+  } else if (to.path === "/" && auth.token) {
+    // 如果已登录且访问根路径，重定向到文章列表
+    next("/articles");
   } else {
     next();
   }

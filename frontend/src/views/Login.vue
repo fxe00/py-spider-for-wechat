@@ -50,7 +50,7 @@ const onSubmit = async () => {
     const { data } = await http.post("/auth/login", form);
     auth.setToken(data.token, data.username);
     ElMessage.success("登录成功");
-    router.push("/");
+    router.push("/articles");
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || "登录失败");
   } finally {
