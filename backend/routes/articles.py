@@ -48,8 +48,12 @@ def list_articles():
         query.setdefault("publish_at", {})["$lte"] = parse_dt(end)
 
     # 如果指定了分类，需要通过 target_id 关联 targets 表
+    # 优化：使用投影只获取 _id 字段，减少数据传输
     if category:
-        target_objs = list(get_db()["targets"].find({"category": category}, {"_id": 1}))
+        target_objs = list(get_db()["targets"].find(
+            {"category": category},
+            {"_id": 1}  # 只获取 _id 字段
+        ))
         if target_objs:
             # articles 表中的 target_id 是 ObjectId 类型
             target_ids = [t["_id"] for t in target_objs]
@@ -58,35 +62,74 @@ def list_articles():
             # 如果没有找到匹配的目标，返回空结果
             return jsonify({"total": 0, "items": []})
 
-    # 先计算总数（用于分页显示）
-    total = get_db()["articles"].count_documents(query)
+    # 优化：如果查询条件简单，使用 estimated_document_count（更快但不精确）
+    # 对于复杂查询，使用 count_documents
+    use_estimated = not q and not category  # 没有正则查询和分类查询时使用估算
+    if use_estimated:
+        try:
+            total = get_db()["articles"].estimated_document_count()
+        except Exception:
+            total = get_db()["articles"].count_documents(query)
+    else:
+        total = get_db()["articles"].count_documents(query)
 
     # 后端分页：使用 MongoDB 的 skip 和 limit
+    # 优化：使用投影减少数据传输（只获取需要的字段）
+    projection = {
+        "_id": 1,
+        "mp_name": 1,
+        "mp_id": 1,
+        "title": 1,
+        "url": 1,
+        "publish_at": 1,
+        "cover": 1,
+        "digest": 1,
+        "target_id": 1,
+        "created_at": 1,
+    }
     skip = (page - 1) * page_size
-    cursor = get_db()["articles"].find(query).sort("publish_at", -1).skip(skip).limit(page_size)
+    cursor = get_db()["articles"].find(query, projection).sort("publish_at", -1).skip(skip).limit(page_size)
     paged_docs = list(cursor)
 
-    # 获取当前页文章的target_id（只查询当前页的数据）
+    # 获取当前页文章的target_id和mp_name（只查询当前页的数据）
     target_ids = list(set([ObjectId(doc.get("target_id")) for doc in paged_docs if doc.get("target_id")]))
-
-    # 批量查询targets获取分类和头像（通过target_id）
-    targets_map = {}
-    if target_ids:
-        targets = list(get_db()["targets"].find({"_id": {"$in": target_ids}},
-                       {"_id": 1, "category": 1, "mp_avatar": 1, "name": 1}))
-        targets_map = {str(t["_id"]): {"category": t.get("category"), "mp_avatar": t.get("mp_avatar")} for t in targets}
-
-    # 备用方案：通过mp_name查找头像（用于处理target_id不匹配的情况）
     mp_names = list(set([doc.get("mp_name") for doc in paged_docs if doc.get("mp_name")]))
+
+    # 批量查询targets获取分类和头像（优化：合并查询，减少数据库访问次数）
+    targets_map = {}
     mp_name_to_avatar = {}
-    if mp_names:
-        targets_by_name = list(get_db()["targets"].find({"name": {"$in": mp_names}},
-                                                        {"name": 1, "mp_avatar": 1, "category": 1}))
-        for t in targets_by_name:
-            mp_name_to_avatar[t.get("name")] = {
-                "mp_avatar": t.get("mp_avatar"),
-                "category": t.get("category")
+
+    if target_ids or mp_names:
+        # 合并查询：同时通过target_id和mp_name查询
+        target_query = {}
+        if target_ids and mp_names:
+            target_query = {"$or": [
+                {"_id": {"$in": target_ids}},
+                {"name": {"$in": mp_names}}
+            ]}
+        elif target_ids:
+            target_query = {"_id": {"$in": target_ids}}
+        elif mp_names:
+            target_query = {"name": {"$in": mp_names}}
+
+        targets = list(get_db()["targets"].find(
+            target_query,
+            {"_id": 1, "category": 1, "mp_avatar": 1, "name": 1}
+        ))
+
+        # 构建两个映射
+        for t in targets:
+            target_id_str = str(t["_id"])
+            targets_map[target_id_str] = {
+                "category": t.get("category"),
+                "mp_avatar": t.get("mp_avatar")
             }
+            # 同时构建mp_name映射
+            if t.get("name"):
+                mp_name_to_avatar[t["name"]] = {
+                    "mp_avatar": t.get("mp_avatar"),
+                    "category": t.get("category")
+                }
 
     # 序列化数据
     data = []
