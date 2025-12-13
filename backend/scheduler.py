@@ -1,3 +1,4 @@
+import atexit
 import logging
 from datetime import datetime
 from typing import Optional
@@ -25,8 +26,9 @@ def setup_scheduler(app: Flask):
         import time
         time.sleep(1.0)  # 等待调度器完全启动
         logging.info("Scheduler started, timezone: Asia/Shanghai")
+        # 注册退出时的清理函数
+        atexit.register(lambda: scheduler.shutdown(wait=False) if scheduler.running else None)
     refresh_jobs()
-    app.teardown_appcontext(lambda _exc=None: scheduler.shutdown(wait=False) if scheduler.running else None)
 
 
 def refresh_jobs():
