@@ -56,16 +56,24 @@ API接口说明:
 # @Software: PyCharm
 
 import logging
+import time
 import requests
 
+# 频率限制错误码
+FREQ_CONTROL_RET = 200013
+# 频率限制等待时间（秒）
+FREQ_CONTROL_WAIT = 60
+# 最大重试次数
+MAX_RETRIES = 3
 
-def get_fakid(headers, tok, query):
+
+def get_fakid(headers, tok, query, retries=MAX_RETRIES):
     '''
-
-    :param headers:请求头
+    :param headers: 请求头
     :param tok: token
     :param query: 查询名称
-    :return:
+    :param retries: 遇到频率限制时的最大重试次数
+    :return: 公众号列表
     '''
     url = 'https://mp.weixin.qq.com/cgi-bin/searchbiz'
     data = {
@@ -79,29 +87,46 @@ def get_fakid(headers, tok, query):
         'f': 'json',
         'ajax': '1',
     }
-    # 发送请求
-    r = requests.get(url, headers=headers, params=data)
-    # 解析json
-    dic = r.json()
-    
-    # 检查响应是否包含错误
-    if 'ret' in dic and dic['ret'] != 0:
-        error_msg = dic.get('errmsg', '未知错误')
-        logging.warning(f"wechat returned error ret={dic['ret']}, msg={error_msg}")
-        return []
-    
-    # 检查响应中是否包含 list 字段
-    if 'list' not in dic:
-        logging.warning(f"wechat response missing 'list' field: {dic}")
-        return []
-    
-    # 获取公众号名称、fakeid
-    wpub_list = [
-        {
-            'wpub_name': item['nickname'],
-            'wpub_fakid': item['fakeid']
-        }
-        for item in dic['list']
-    ]
 
-    return wpub_list
+    for attempt in range(retries):
+        # 发送请求
+        r = requests.get(url, headers=headers, params=data)
+        # 解析json
+        dic = r.json()
+
+        # 检查响应是否包含错误
+        if 'ret' in dic and dic['ret'] != 0:
+            ret = dic['ret']
+            error_msg = dic.get('errmsg', '未知错误')
+
+            # 如果是频率限制，等待后重试
+            if ret == FREQ_CONTROL_RET:
+                if attempt < retries - 1:
+                    logging.warning(
+                        f"wechat returned freq control (ret={ret}), waiting {FREQ_CONTROL_WAIT}s before retry ({attempt + 1}/{retries})")
+                    time.sleep(FREQ_CONTROL_WAIT)
+                    continue
+                else:
+                    logging.error(f"wechat returned freq control (ret={ret}) after {retries} attempts, giving up")
+                    return []
+            else:
+                logging.warning(f"wechat returned error ret={ret}, msg={error_msg}")
+                return []
+
+        # 检查响应中是否包含 list 字段
+        if 'list' not in dic:
+            logging.warning(f"wechat response missing 'list' field: {dic}")
+            return []
+
+        # 获取公众号名称、fakeid
+        wpub_list = [
+            {
+                'wpub_name': item['nickname'],
+                'wpub_fakid': item['fakeid']
+            }
+            for item in dic['list']
+        ]
+
+        return wpub_list
+
+    return []

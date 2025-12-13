@@ -77,6 +77,7 @@ API接口说明:
 """
 
 # -*- coding: utf-8 -*-
+import logging
 import random
 import requests
 import time
@@ -86,6 +87,10 @@ import datetime
 import os
 
 TIMEOUT = 10  # 请求超时秒数
+# 频率限制错误码
+FREQ_CONTROL_RET = 200013
+# 频率限制等待时间（秒）
+FREQ_CONTROL_WAIT = 60
 
 
 def getAllUrl(page_num, start_page, fad, tok, headers, delay_range=(1, 2), retries=1, timeout=TIMEOUT):                             # pages
@@ -109,7 +114,7 @@ def getAllUrl(page_num, start_page, fad, tok, headers, delay_range=(1, 2), retri
             }
             time.sleep(random.uniform(*delay_range))
             resp_json = None
-            for _ in range(max(1, retries)):
+            for retry_attempt in range(max(1, retries)):
                 try:
                     r = requests.get(url, headers=headers, params=data, timeout=timeout)
                     r.raise_for_status()
@@ -117,16 +122,27 @@ def getAllUrl(page_num, start_page, fad, tok, headers, delay_range=(1, 2), retri
                     break
                 except requests.RequestException as exc:
                     resp_json = None
-                    print(f"[error] request page {i} failed: {exc}")
-                    time.sleep(random.uniform(*delay_range))
+                    logging.warning(f"request page {i} failed: {exc}")
+                    if retry_attempt < retries - 1:
+                        time.sleep(random.uniform(*delay_range))
             if resp_json is None:
                 break
             # 解析json
             dic = resp_json
-            if dic.get("base_resp", {}).get("ret") not in (0, None):
-                print(
-                    f"[warn] wechat returned error ret={dic['base_resp']['ret']}, msg={dic['base_resp'].get('err_msg')}")
-                break
+            base_ret = dic.get("base_resp", {}).get("ret")
+            if base_ret not in (0, None):
+                err_msg = dic.get("base_resp", {}).get("err_msg", "未知错误")
+                # 如果是频率限制，等待后重试
+                if base_ret == FREQ_CONTROL_RET:
+                    logging.warning(
+                        f"wechat returned freq control (ret={base_ret}) on page {i}, waiting {FREQ_CONTROL_WAIT}s before retry")
+                    time.sleep(FREQ_CONTROL_WAIT)
+                    # 重新尝试当前页
+                    i -= 1  # 回退一页，下次循环会重新处理
+                    continue
+                else:
+                    logging.warning(f"wechat returned error ret={base_ret}, msg={err_msg}")
+                    break
             for i in dic['app_msg_list']:     # 遍历dic['app_msg_list']中所有内容
                 # 按照键值对的方式选择
                 title.append(i['title'])      # get title value
