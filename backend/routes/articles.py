@@ -85,6 +85,16 @@ def list_articles():
     return jsonify({"total": total, "items": data})
 
 
+@bp.route("/mp-names", methods=["GET"])
+@jwt_required
+def list_mp_names():
+    """获取所有已使用的公众号名称列表"""
+    mp_names = get_db()["articles"].distinct("mp_name")
+    # 过滤掉 None 和空字符串
+    mp_names = [name for name in mp_names if name]
+    return jsonify(sorted(mp_names))
+
+
 def parse_dt(value):
     try:
         return datetime.fromisoformat(value)

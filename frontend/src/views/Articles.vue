@@ -67,6 +67,21 @@
               </el-input>
             </div>
             <div class="filter-item">
+              <label>公众号筛选</label>
+              <el-select
+                v-model="selectedMpName"
+                size="default"
+                placeholder="全部公众号"
+                clearable
+                filterable
+                @change="fetchArticles"
+                style="width: 180px"
+              >
+                <el-option label="全部" value="" />
+                <el-option v-for="mp in mpNames" :key="mp" :label="mp" :value="mp" />
+              </el-select>
+            </div>
+            <div class="filter-item">
               <label>分类筛选</label>
               <el-select
                 v-model="selectedCategory"
@@ -241,6 +256,7 @@
               :key="mp.mp_name"
               class="mp-card"
               shadow="hover"
+              @click="viewMpArticles(mp.mp_name)"
             >
               <div class="mp-card-content">
                 <div class="mp-avatar">
@@ -295,9 +311,11 @@ import Layout from "./Layout.vue";
 
 const articles = ref([]);
 const categories = ref([]);
+const mpNames = ref([]);
 const loading = ref({ articles: false });
 const articleQuery = ref("");
 const selectedCategory = ref("");
+const selectedMpName = ref("");
 const todayOnly = ref(false);
 const articleView = ref("table"); // 默认列表视图
 const articleSort = ref("desc");
@@ -315,12 +333,24 @@ const fetchCategories = async () => {
   }
 };
 
+const fetchMpNames = async () => {
+  try {
+    const { data } = await http.get("/articles/mp-names");
+    mpNames.value = data || [];
+  } catch {
+    // 忽略错误，公众号列表是可选的
+  }
+};
+
 const fetchArticles = async () => {
   loading.value.articles = true;
   try {
     const params = { page: 1, page_size: 200, q: articleQuery.value };
     if (selectedCategory.value) {
       params.category = selectedCategory.value;
+    }
+    if (selectedMpName.value) {
+      params.mp_name = selectedMpName.value;
     }
     if (todayOnly.value) {
       const start = dayjs().startOf("day").toISOString();
@@ -378,6 +408,15 @@ const onArticleViewChange = () => {
   // no-op for now
 };
 
+const viewMpArticles = (mpName) => {
+  // 切换到列表视图
+  articleView.value = "table";
+  // 设置公众号筛选
+  selectedMpName.value = mpName;
+  // 刷新文章列表
+  fetchArticles();
+};
+
 const openArticle = (url) => {
   if (url) {
     window.open(url, "_blank");
@@ -400,6 +439,7 @@ const handleArticleCurrentChange = (val) => {
 
 onMounted(() => {
   fetchCategories();
+  fetchMpNames();
   fetchArticles();
 });
 </script>
@@ -685,10 +725,12 @@ onMounted(() => {
 .mp-card {
   border-radius: 12px;
   transition: all 0.3s ease;
+  cursor: pointer;
 }
 
 .mp-card:hover {
   transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.15);
 }
 
 .mp-card-content {

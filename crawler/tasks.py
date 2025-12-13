@@ -138,12 +138,14 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
                 update_data["mp_avatar"] = avatar_url
             else:
                 # 下载图片并转换为base64
+                logging.info("Attempting to download avatar for target=%s from URL: %s", mp_name, avatar_url)
                 avatar_base64 = _download_avatar_as_base64(avatar_url, headers)
                 if avatar_base64:
                     update_data["mp_avatar"] = avatar_base64
-                    logging.info("Downloaded and converted avatar to base64 for target=%s", mp_name)
+                    logging.info("Downloaded and converted avatar to base64 for target=%s (length: %d chars)",
+                                 mp_name, len(avatar_base64))
                 else:
-                    logging.warning("Failed to download avatar for target=%s", mp_name)
+                    logging.warning("Failed to download avatar for target=%s from URL: %s", mp_name, avatar_url)
         else:
             # 记录为什么没有获取到头像
             logging.warning("No avatar URL found for target=%s. Available fields: %s",
@@ -159,14 +161,24 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
 
         if update_data:
             try:
-                get_db()["targets"].update_one(
+                result = get_db()["targets"].update_one(
                     {"_id": target["_id"]},
                     {"$set": update_data}
                 )
                 if need_refresh_fakeid:
-                    logging.info("Saved fakeid and avatar for target=%s", target.get("name"))
+                    logging.info("Saved fakeid and avatar for target=%s (matched: %d, modified: %d)",
+                                 target.get("name"), result.matched_count, result.modified_count)
                 else:
-                    logging.info("Saved avatar for target=%s", target.get("name"))
+                    logging.info("Saved avatar for target=%s (matched: %d, modified: %d)",
+                                 target.get("name"), result.matched_count, result.modified_count)
+                # 验证保存是否成功
+                if "mp_avatar" in update_data:
+                    saved_target = get_db()["targets"].find_one({"_id": target["_id"]}, {"mp_avatar": 1})
+                    if saved_target and saved_target.get("mp_avatar"):
+                        logging.info("Verified: mp_avatar saved successfully for target=%s (length: %d chars)",
+                                     target.get("name"), len(saved_target.get("mp_avatar", "")))
+                    else:
+                        logging.error("Warning: mp_avatar not found after save for target=%s", target.get("name"))
             except Exception:
                 logging.exception("Failed to save fakeid/avatar for target=%s", target.get("_id"))
 
@@ -224,6 +236,13 @@ def _download_avatar_as_base64(avatar_url: str, headers: Dict, thumbnail: bool =
         return None
 
     try:
+        # 处理相对URL
+        if avatar_url.startswith("//"):
+            avatar_url = "https:" + avatar_url
+        elif avatar_url.startswith("/"):
+            avatar_url = "https://mp.weixin.qq.com" + avatar_url
+
+        logging.info("Downloading avatar from URL: %s", avatar_url)
         # 下载图片
         response = requests.get(avatar_url, headers=headers, timeout=10, stream=True)
         response.raise_for_status()
