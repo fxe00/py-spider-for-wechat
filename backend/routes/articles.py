@@ -30,6 +30,7 @@ def list_articles():
     args = request.args
     mp_name = args.get("mp_name")
     q = args.get("q")
+    category = args.get("category")
     start = args.get("start")
     end = args.get("end")
     page = int(args.get("page", 1))
@@ -43,6 +44,17 @@ def list_articles():
         query.setdefault("publish_at", {})["$gte"] = parse_dt(start)
     if end:
         query.setdefault("publish_at", {})["$lte"] = parse_dt(end)
+
+    # 如果指定了分类，需要通过 target_id 关联 targets 表
+    if category:
+        target_objs = list(get_db()["targets"].find({"category": category}, {"_id": 1}))
+        if target_objs:
+            # articles 表中的 target_id 是 ObjectId 类型
+            target_ids = [t["_id"] for t in target_objs]
+            query["target_id"] = {"$in": target_ids}
+        else:
+            # 如果没有找到匹配的目标，返回空结果
+            return jsonify({"total": 0, "items": []})
 
     cursor = get_db()["articles"].find(query).sort("publish_at", -1)
     total = get_db()["articles"].count_documents(query)

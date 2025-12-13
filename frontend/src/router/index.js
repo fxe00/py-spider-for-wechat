@@ -1,13 +1,18 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Login from "../views/Login.vue";
-import Dashboard from "../views/Dashboard.vue";
+import Config from "../views/Config.vue";
+import Articles from "../views/Articles.vue";
+import Logs from "../views/Logs.vue";
 import { useAuthStore } from "../stores/auth";
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", component: Login },
-    { path: "/", component: Dashboard },
+    { path: "/config", component: Config },
+    { path: "/articles", component: Articles },
+    { path: "/logs", component: Logs },
+    { path: "/", redirect: "/articles" },
   ],
 });
 

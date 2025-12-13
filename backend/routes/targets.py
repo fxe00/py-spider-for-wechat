@@ -13,6 +13,7 @@ def _serialize(doc):
         "id": str(doc["_id"]),
         "name": doc.get("name"),
         "biz": doc.get("biz"),
+        "category": doc.get("category"),
         "freq_minutes": doc.get("freq_minutes"),
         "schedule_mode": doc.get("schedule_mode"),
         "interval_value": doc.get("interval_value"),
@@ -60,6 +61,7 @@ def create_target():
     payload = {
         "name": name,
         "biz": (body.get("biz") or "").strip(),
+        "category": (body.get("category") or "").strip() or None,
         "freq_minutes": int(freq) if freq else None,
         "schedule_mode": schedule_mode,
         "interval_value": interval_value,
@@ -91,6 +93,7 @@ def update_target(id):
     for key in [
         "name",
         "biz",
+        "category",
         "freq_minutes",
         "enabled",
         "schedule_mode",
@@ -100,7 +103,10 @@ def update_target(id):
         "cron_expr",
     ]:
         if key in body:
-            updates[key] = body[key]
+            if key == "category":
+                updates[key] = (body[key] or "").strip() or None
+            else:
+                updates[key] = body[key]
     if "account_id" in body and body["account_id"]:
         updates["account_id"] = ObjectId(body["account_id"])
     if not updates:
@@ -144,3 +150,13 @@ def delete_target(id):
 def run_target(id):
     trigger_target(id)
     return jsonify({"triggered": True})
+
+
+@bp.route("/categories", methods=["GET"])
+@jwt_required
+def list_categories():
+    """获取所有已使用的分类列表"""
+    categories = get_db()["targets"].distinct("category")
+    # 过滤掉 None 和空字符串
+    categories = [c for c in categories if c]
+    return jsonify(sorted(categories))
