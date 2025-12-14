@@ -58,11 +58,10 @@ def refresh_jobs():
         for target in targets:
             mode = target.get("schedule_mode") or "daily"
             if mode == "daily":
-                # 对于 daily 模式，需要检查每个时间点是否已过且未执行
-                # 注意：每个时间点应该独立执行，不应该因为今天执行过就跳过所有时间点
+                # 对于 daily 模式，检查今天已过的时间点是否需要立即执行
                 times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
 
-                # 获取最后一次执行时间（用于判断是否需要在启动时补执行）
+                # 获取最后一次执行时间
                 last_run_at = target.get("last_run_at")
                 last_run_time_tz = None
                 if last_run_at:
@@ -72,25 +71,45 @@ def refresh_jobs():
                         else:
                             last_run_time_tz = last_run_at.astimezone(tz)
 
-                # 检查是否有已过的时间点需要立即执行
-                # 策略：如果今天还没有执行过任何时间点，且当前时间已过第一个时间点，则执行一次
-                # 这样可以避免在启动时重复执行多个时间点
+                # 检查今天是否有已过的时间点需要执行
+                # 策略：对于每个已过的时间点，如果今天还没有执行过（或执行时间早于该时间点），则执行一次
+                # 这样可以补执行今天错过的任务，即使之前已经执行过其他时间点
                 should_execute_now = False
-                if last_run_time_tz is None or last_run_time_tz.date() < today:
-                    # 今天还没有执行过，检查是否有时间点已过
-                    for t in times:
-                        try:
-                            hh, mm = t.split(":")
-                            scheduled_time = tz.localize(datetime.combine(
-                                today, datetime.min.time().replace(hour=int(hh), minute=int(mm))))
-                            if scheduled_time < current_time:
-                                # 今天有执行时间已过，且今天还未执行过
+                missed_times = []
+
+                for t in times:
+                    try:
+                        hh, mm = t.split(":")
+                        scheduled_time = tz.localize(datetime.combine(
+                            today, datetime.min.time().replace(hour=int(hh), minute=int(mm))))
+
+                        if scheduled_time < current_time:
+                            # 这个时间点已过
+                            # 如果今天还没有执行过，或者最后执行时间早于这个时间点，则需要执行
+                            if last_run_time_tz is None:
+                                # 今天还没有执行过
                                 should_execute_now = True
+                                missed_times.append(t)
                                 break
-                        except Exception:
-                            pass
+                            elif last_run_time_tz.date() < today:
+                                # 今天还没有执行过
+                                should_execute_now = True
+                                missed_times.append(t)
+                                break
+                            elif last_run_time_tz < scheduled_time:
+                                # 今天执行过，但执行时间早于这个时间点，说明这个时间点的任务还没执行
+                                should_execute_now = True
+                                missed_times.append(t)
+                                break
+                    except Exception:
+                        pass
 
                 if should_execute_now:
+                    logging.info("Target %s has missed time(s) %s today (current: %s, last_run: %s), will execute immediately",
+                                 target.get("name", str(target["_id"])),
+                                 ", ".join(missed_times),
+                                 current_time.strftime("%H:%M"),
+                                 last_run_time_tz.strftime("%Y-%m-%d %H:%M") if last_run_time_tz else "never")
                     targets_to_execute.add(str(target["_id"]))
 
             _add_jobs_for_target(target)
@@ -189,34 +208,6 @@ def _add_jobs_for_target(target: dict):
 
     for job in jobs:
         try:
-            # 对于 daily 模式，检查时间点是否已过，如果已过但在 grace time 内，立即执行一次
-            tz = pytz.timezone("Asia/Shanghai")
-            current_time = datetime.now(tz)
-
-            if mode == "daily" and isinstance(job["trigger"], CronTrigger):
-                # 从 job id 中提取时间点索引
-                if "-" in job["id"]:
-                    try:
-                        idx = int(job["id"].split("-")[-1])
-                        times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
-                        if idx < len(times):
-                            t = times[idx]
-                            hh, mm = t.split(":")
-                            today = current_time.date()
-                            scheduled_time = tz.localize(datetime.combine(
-                                today, datetime.min.time().replace(hour=int(hh), minute=int(mm))))
-
-                            # 如果时间点已过但在 grace time 内（5分钟），立即执行一次
-                            if scheduled_time < current_time:
-                                time_diff = (current_time - scheduled_time).total_seconds()
-                                if time_diff <= 300:  # 5分钟内
-                                    logging.info("Time %s for target %s has passed but within grace time (%.0f seconds), executing immediately",
-                                                 t, target_id, time_diff)
-                                    # 立即执行一次（异步，不阻塞）
-                                    _executor.submit(_execute_target_async, target_id)
-                    except Exception as e:
-                        logging.warning("Failed to check missed time for job %s: %s", job["id"], e)
-
             scheduler.add_job(
                 trigger_target,
                 id=job["id"],
