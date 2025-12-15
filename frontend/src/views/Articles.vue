@@ -250,7 +250,15 @@
 
         <!-- 公众号汇总视图 -->
         <template v-else>
-          <div class="mp-summary-grid">
+          <div v-if="loading.mpSummary" class="loading-state">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>加载汇总数据中...</span>
+          </div>
+          <div v-else-if="mpSummary.length === 0" class="empty-state">
+            <el-icon class="empty-icon"><Collection /></el-icon>
+            <p>暂无汇总数据，请稍后重试</p>
+          </div>
+          <div v-else class="mp-summary-grid">
             <el-card
               v-for="mp in mpSummary"
               :key="mp.mp_name"
@@ -306,6 +314,7 @@ import {
   Clock,
   Link,
   UserFilled,
+  Loading,
 } from "@element-plus/icons-vue";
 import Layout from "./Layout.vue";
 
@@ -397,28 +406,22 @@ const fetchMpSummary = async () => {
 };
 
 const mpSummary = computed(() => {
-  // 使用从后端获取的完整汇总数据
-  if (articleView.value === "icon" && mpSummaryData.value.length > 0) {
-    return mpSummaryData.value.map((item) => ({
-      mp_name: item.mp_name,
-      count: item.count,
-      latest: item.latest_publish_at ? new Date(item.latest_publish_at).getTime() : 0,
-      mp_avatar: item.mp_avatar,
-    }));
-  }
-  // 如果还没有加载汇总数据，回退到使用当前页数据（兼容）
-  const map = new Map();
-  articles.value.forEach((item) => {
-    const key = item.mp_name || "未知";
-    const ts = new Date(item.publish_at || item.created_at || 0).getTime();
-    if (!map.has(key)) {
-      map.set(key, { mp_name: key, count: 0, latest: 0, mp_avatar: item.mp_avatar });
+  // 汇总视图必须使用从后端获取的完整汇总数据
+  if (articleView.value === "icon") {
+    // 如果数据已加载，使用完整数据
+    if (mpSummaryData.value.length > 0) {
+      return mpSummaryData.value.map((item) => ({
+        mp_name: item.mp_name,
+        count: item.count,
+        latest: item.latest_publish_at ? new Date(item.latest_publish_at).getTime() : 0,
+        mp_avatar: item.mp_avatar,
+      }));
     }
-    const obj = map.get(key);
-    obj.count += 1;
-    obj.latest = Math.max(obj.latest, ts);
-  });
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+    // 如果数据还没加载，返回空数组（避免显示错误的统计）
+    return [];
+  }
+  // 列表视图不需要汇总数据
+  return [];
 });
 
 const onArticleViewChange = () => {
