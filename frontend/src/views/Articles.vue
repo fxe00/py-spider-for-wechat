@@ -407,7 +407,7 @@ const fetchMpSummary = async () => {
 
 const mpSummary = computed(() => {
   // 汇总视图必须使用从后端获取的完整汇总数据
-  if (articleView.value === "icon") {
+  if (articleView.value === "mp") {
     // 如果数据已加载，使用完整数据
     if (mpSummaryData.value.length > 0) {
       return mpSummaryData.value.map((item) => ({
@@ -426,7 +426,7 @@ const mpSummary = computed(() => {
 
 const onArticleViewChange = () => {
   // 切换到汇总视图时，加载完整的汇总数据
-  if (articleView.value === "icon") {
+  if (articleView.value === "mp") {
     fetchMpSummary();
   }
 };
@@ -467,7 +467,7 @@ onMounted(() => {
   fetchMpNames();
   fetchArticles();
   // 如果默认是汇总视图，加载汇总数据
-  if (articleView.value === "icon") {
+  if (articleView.value === "mp") {
     fetchMpSummary();
   }
 });
