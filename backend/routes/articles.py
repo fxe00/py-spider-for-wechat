@@ -160,6 +160,82 @@ def list_mp_names():
     return jsonify(sorted(mp_names))
 
 
+@bp.route("/mp-summary", methods=["GET"])
+@jwt_required
+def mp_summary():
+    """获取所有公众号的汇总统计（文章数、最新发布时间、头像等）"""
+    from pymongo import DESCENDING
+
+    # 使用聚合管道统计每个公众号的文章数和最新发布时间
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$mp_name",
+                "count": {"$sum": 1},
+                "latest_publish_at": {"$max": "$publish_at"},
+                "target_id": {"$first": "$target_id"},  # 用于获取头像和分类
+            }
+        },
+        {
+            "$sort": {"count": DESCENDING}
+        }
+    ]
+
+    results = list(get_db()["articles"].aggregate(pipeline))
+
+    # 获取所有 target_id 和 mp_name，用于查询头像和分类
+    target_ids = [ObjectId(r["target_id"]) for r in results if r.get("target_id")]
+    mp_names = [r["_id"] for r in results if r.get("_id")]
+
+    # 批量查询 targets 获取头像和分类
+    targets_map = {}
+    if target_ids:
+        targets = list(get_db()["targets"].find(
+            {"_id": {"$in": target_ids}},
+            {"_id": 1, "category": 1, "mp_avatar": 1, "name": 1}
+        ))
+        for t in targets:
+            targets_map[str(t["_id"])] = {
+                "mp_avatar": t.get("mp_avatar"),
+                "category": t.get("category")
+            }
+
+    # 通过 mp_name 查找头像（备用方案）
+    mp_name_to_avatar = {}
+    if mp_names:
+        targets_by_name = list(get_db()["targets"].find(
+            {"name": {"$in": mp_names}},
+            {"name": 1, "mp_avatar": 1, "category": 1}
+        ))
+        for t in targets_by_name:
+            mp_name_to_avatar[t.get("name")] = {
+                "mp_avatar": t.get("mp_avatar"),
+                "category": t.get("category")
+            }
+
+    # 组装返回数据
+    summary = []
+    for r in results:
+        mp_name = r.get("_id") or "未知"
+        target_id_str = str(r.get("target_id")) if r.get("target_id") else None
+
+        # 优先使用 target_id 查找头像，其次使用 mp_name
+        mp_avatar = None
+        if target_id_str and target_id_str in targets_map:
+            mp_avatar = targets_map[target_id_str].get("mp_avatar")
+        if not mp_avatar and mp_name in mp_name_to_avatar:
+            mp_avatar = mp_name_to_avatar[mp_name].get("mp_avatar")
+
+        summary.append({
+            "mp_name": mp_name,
+            "count": r.get("count", 0),
+            "latest_publish_at": r.get("latest_publish_at"),
+            "mp_avatar": mp_avatar,
+        })
+
+    return jsonify(summary)
+
+
 def parse_dt(value):
     try:
         return datetime.fromisoformat(value)

@@ -313,7 +313,8 @@ const articles = ref([]);
 const totalArticles = ref(0); // 总文章数（从后端获取）
 const categories = ref([]);
 const mpNames = ref([]);
-const loading = ref({ articles: false });
+const loading = ref({ articles: false, mpSummary: false });
+const mpSummaryData = ref([]); // 从后端获取的公众号汇总数据
 const articleQuery = ref("");
 const selectedCategory = ref("");
 const selectedMpName = ref("");
@@ -383,9 +384,29 @@ const todayCount = computed(() => {
   }).length;
 });
 
+const fetchMpSummary = async () => {
+  loading.value.mpSummary = true;
+  try {
+    const { data } = await http.get("/articles/mp-summary");
+    mpSummaryData.value = data || [];
+  } catch {
+    ElMessage.error("获取公众号汇总失败");
+  } finally {
+    loading.value.mpSummary = false;
+  }
+};
+
 const mpSummary = computed(() => {
-  // 公众号汇总视图需要所有数据，这里暂时使用当前页数据
-  // 如果需要完整汇总，可以添加一个单独的API
+  // 使用从后端获取的完整汇总数据
+  if (articleView.value === "icon" && mpSummaryData.value.length > 0) {
+    return mpSummaryData.value.map((item) => ({
+      mp_name: item.mp_name,
+      count: item.count,
+      latest: item.latest_publish_at ? new Date(item.latest_publish_at).getTime() : 0,
+      mp_avatar: item.mp_avatar,
+    }));
+  }
+  // 如果还没有加载汇总数据，回退到使用当前页数据（兼容）
   const map = new Map();
   articles.value.forEach((item) => {
     const key = item.mp_name || "未知";
@@ -401,7 +422,10 @@ const mpSummary = computed(() => {
 });
 
 const onArticleViewChange = () => {
-  // no-op for now
+  // 切换到汇总视图时，加载完整的汇总数据
+  if (articleView.value === "icon") {
+    fetchMpSummary();
+  }
 };
 
 const viewMpArticles = (mpName) => {
@@ -439,6 +463,10 @@ onMounted(() => {
   fetchCategories();
   fetchMpNames();
   fetchArticles();
+  // 如果默认是汇总视图，加载汇总数据
+  if (articleView.value === "icon") {
+    fetchMpSummary();
+  }
 });
 </script>
 
