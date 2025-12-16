@@ -1,8 +1,22 @@
+/* 全局字体定义 - JetBrains Mono */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap; /* 优化字体加载性能 */
+}
+
 body {
   margin: 0;
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "JetBrains Mono", "Inter", "Helvetica Neue", Arial, sans-serif;
   background: #eef2f7;
   color: #1f2d3d;
+}
+
+/* 确保所有元素都使用全局字体 */
+* {
+  font-family: inherit;
 }
 
 a {
