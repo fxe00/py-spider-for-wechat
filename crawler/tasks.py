@@ -18,11 +18,13 @@ THUMBNAIL_SIZE = (64, 64)  # 缩略图尺寸
 THUMBNAIL_QUALITY = 75  # JPEG质量（1-100）
 
 
-def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
+def run_crawl(target: Dict, account: Optional[Dict], page_num: int = None):
     """
     结合现有 utils 实现的简易爬取：
     1) 优先使用缓存的 fakeid，如果没有或失效则查询并保存
-    2) 用 getAllUrl 拉取最近 page_num 页（每页5篇）基础信息
+    2) 用 getAllUrl 拉取文章列表：
+       - 新公众号（无缓存 fakeid）：爬取 3 页
+       - 已有公众号（有缓存 fakeid）：只爬取 1 页（最新）
     3) 去重写入 Mongo articles
     TODO: 若需正文，可对 links 再调用内容抓取模块。
     """
@@ -52,6 +54,11 @@ def run_crawl(target: Dict, account: Optional[Dict], page_num: int = 3):
     need_refresh_fakeid = False
     need_refresh_avatar = False
     search_results = None  # 用于保存查询结果，以便后续保存头像
+    is_new_target = not fakeid  # 判断是否是新公众号
+
+    # 自动决定爬取页数：新公众号爬3页，已有的只爬1页（最新）
+    if page_num is None:
+        page_num = 3 if is_new_target else 1
 
     # 记录开始日志
     _append_log(target, status="start", message="开始爬取", details={"step": "初始化"})
