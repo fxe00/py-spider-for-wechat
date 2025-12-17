@@ -250,6 +250,7 @@
         </el-form-item>
         <el-form-item label="调度类型">
           <el-radio-group v-model="targetDialog.form.schedule_mode">
+            <el-radio-button label="smart">智能调度</el-radio-button>
             <el-radio-button label="daily">每日指定时刻</el-radio-button>
             <el-radio-button label="interval">固定间隔</el-radio-button>
             <el-radio-button label="cron">Cron 表达式</el-radio-button>
@@ -263,6 +264,20 @@
               <el-option label="小时" value="hour" />
               <el-option label="天" value="day" />
             </el-select>
+          </el-form-item>
+        </template>
+        <template v-else-if="targetDialog.form.schedule_mode === 'smart'">
+          <el-form-item>
+            <el-alert type="info" :closable="false" show-icon>
+              <template #title>
+                系统将根据公众号历史发布频率自动调整爬取时间：
+                <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+                  <li>高频（两天至少1篇）：每天4次（09:00, 13:00, 18:00, 22:00）</li>
+                  <li>中频（一周至少1篇）：每天2次（10:00, 18:00）</li>
+                  <li>低频（一个月约1篇）：每天1次（10:00）</li>
+                </ul>
+              </template>
+            </el-alert>
           </el-form-item>
         </template>
         <template v-else-if="targetDialog.form.schedule_mode === 'daily'">
@@ -418,7 +433,7 @@ const targetDialog = reactive({
     name: "",
     category: "",
     account_id: "",
-    schedule_mode: "daily",
+    schedule_mode: "smart",
     freq_value: 1,
     freq_unit: "hour",
     daily_times: ["09:00", "13:00", "18:00", "22:00"],
@@ -573,7 +588,7 @@ const openTargetDialog = (row) => {
       name: "",
       category: "",
       account_id: accounts.value[0].id || "",
-      schedule_mode: "daily",
+      schedule_mode: "smart",
       freq_value: 1,
       freq_unit: "day",
       daily_times: ["09:00", "13:00", "18:00", "22:00"],
@@ -676,6 +691,12 @@ const toValueAndUnit = (minutes) => {
 
 const renderSchedule = (row) => {
   const mode = row.schedule_mode || "interval";
+  if (mode === "smart") {
+    const freq = row.auto_frequency || "medium";
+    const freqNames = { high: "高频", medium: "中频", low: "低频" };
+    const times = row.daily_times && row.daily_times.length ? row.daily_times.join(", ") : "自动";
+    return `智能(${freqNames[freq] || freq}) ${times}`;
+  }
   if (mode === "daily" && row.daily_times && row.daily_times.length) {
     return `每日 ${row.daily_times.join(", ")}`;
   }

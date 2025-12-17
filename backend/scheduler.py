@@ -1,8 +1,8 @@
 import atexit
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Optional, List
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,6 +13,13 @@ from flask import Flask
 
 from backend.db import get_db
 from crawler.tasks import run_crawl
+
+# 智能调度配置
+SMART_SCHEDULE_CONFIG = {
+    "high": ["09:00", "13:00", "18:00", "22:00"],   # 高频：日均≥1篇，每天4次
+    "medium": ["10:00", "18:00"],                   # 中频：周均2-6篇，每天2次
+    "low": ["10:00"],                               # 低频：周均<2篇，每天1次
+}
 
 scheduler = BackgroundScheduler()
 _app: Optional[Flask] = None
@@ -57,9 +64,9 @@ def refresh_jobs():
 
         for target in targets:
             mode = target.get("schedule_mode") or "daily"
-            if mode == "daily":
-                # 对于 daily 模式，检查今天已过的时间点是否需要立即执行
-                times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
+            if mode in ("daily", "smart"):
+                # 对于 daily/smart 模式，检查今天已过的时间点是否需要立即执行
+                times = get_smart_schedule_times(target)
 
                 # 获取最后一次执行时间
                 last_run_at = target.get("last_run_at")
@@ -177,8 +184,8 @@ def _add_jobs_for_target(target: dict):
                     "trigger": IntervalTrigger(minutes=minutes),
                 }
             )
-    elif mode == "daily":
-        times = target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
+    elif mode in ("daily", "smart"):
+        times = get_smart_schedule_times(target)
         for idx, t in enumerate(times):
             try:
                 hh, mm = t.split(":")
@@ -240,3 +247,85 @@ def _interval_to_minutes(target: dict):
     if minutes:
         return max(int(minutes), 1)
     return None
+
+
+def _analyze_publish_frequency(mp_name: str) -> str:
+    """
+    分析公众号发布频率，返回频率等级：high/medium/low
+
+    - high: 两天至少发1篇（月均≥15篇）
+    - medium: 一周至少发1篇（月均≥4篇）
+    - low: 一个月才发1篇（月均<4篇）
+    """
+    db = get_db()
+
+    # 查询最近30天的文章数量
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    article_count = db["articles"].count_documents({
+        "mp_name": mp_name,
+        "publish_at": {"$gte": thirty_days_ago}
+    })
+
+    # 判断频率等级
+    if article_count >= 15:  # 两天至少1篇 = 月均15篇
+        return "high"
+    elif article_count >= 4:  # 一周至少1篇 = 月均4篇
+        return "medium"
+    else:
+        return "low"
+
+
+def get_smart_schedule_times(target: dict) -> List[str]:
+    """
+    根据公众号发布频率智能获取调度时间
+
+    如果 schedule_mode 是 "smart"，则根据历史发布频率自动计算
+    否则返回用户配置的 daily_times
+    """
+    mode = target.get("schedule_mode") or "daily"
+
+    if mode == "smart":
+        mp_name = target.get("name")
+        if not mp_name:
+            return SMART_SCHEDULE_CONFIG["medium"]  # 默认中频
+
+        frequency = _analyze_publish_frequency(mp_name)
+        times = SMART_SCHEDULE_CONFIG.get(frequency, SMART_SCHEDULE_CONFIG["medium"])
+
+        logging.info("Smart schedule for %s: frequency=%s, times=%s",
+                     mp_name, frequency, times)
+        return times
+
+    # 非智能模式，返回用户配置
+    return target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
+
+
+def update_all_smart_schedules():
+    """更新所有智能调度的目标的调度时间"""
+    if _app is None:
+        return
+
+    with _app.app_context():
+        db = get_db()
+        targets = list(db["targets"].find({"enabled": True, "schedule_mode": "smart"}))
+
+        for target in targets:
+            mp_name = target.get("name")
+            if not mp_name:
+                continue
+
+            frequency = _analyze_publish_frequency(mp_name)
+            new_times = SMART_SCHEDULE_CONFIG.get(frequency, SMART_SCHEDULE_CONFIG["medium"])
+
+            # 更新数据库中的 daily_times（用于显示）
+            db["targets"].update_one(
+                {"_id": target["_id"]},
+                {"$set": {"daily_times": new_times, "auto_frequency": frequency}}
+            )
+
+            logging.info("Updated smart schedule for %s: %s -> %s",
+                         mp_name, frequency, new_times)
+
+        # 刷新调度器
+        if targets:
+            refresh_jobs()
