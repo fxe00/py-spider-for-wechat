@@ -166,6 +166,10 @@ def _execute_target_async(target_id: str):
             run_crawl(target, account)
             get_db()["targets"].update_one({"_id": target["_id"]}, {"$set": {"last_run_at": datetime.utcnow()}})
             logging.info("Completed crawl for target %s", target_id)
+
+            # 智能调度模式：爬取完成后检查是否需要调整频率
+            if target.get("schedule_mode") == "smart":
+                _check_and_update_smart_schedule(target)
         except Exception as exc:
             logging.exception("Crawl failed for target %s: %s", target_id, exc)
             get_db()["targets"].update_one({"_id": ObjectId(target_id)}, {"$set": {"last_error": str(exc)}})
@@ -298,6 +302,37 @@ def get_smart_schedule_times(target: dict) -> List[str]:
 
     # 非智能模式，返回用户配置
     return target.get("daily_times") or ["09:00", "13:00", "18:00", "22:00"]
+
+
+def _check_and_update_smart_schedule(target: dict):
+    """
+    检查并更新单个目标的智能调度频率
+    在每次爬取完成后调用，实时调整调度频率
+    """
+    mp_name = target.get("name")
+    if not mp_name:
+        return
+
+    db = get_db()
+    old_frequency = target.get("auto_frequency")
+    new_frequency = _analyze_publish_frequency(mp_name)
+
+    # 如果频率发生变化，更新配置并刷新该目标的调度任务
+    if old_frequency != new_frequency:
+        new_times = SMART_SCHEDULE_CONFIG.get(new_frequency, SMART_SCHEDULE_CONFIG["medium"])
+
+        db["targets"].update_one(
+            {"_id": target["_id"]},
+            {"$set": {"daily_times": new_times, "auto_frequency": new_frequency}}
+        )
+
+        logging.info("Smart schedule adjusted for %s: %s -> %s (times: %s)",
+                     mp_name, old_frequency, new_frequency, new_times)
+
+        # 重新添加该目标的调度任务
+        target["auto_frequency"] = new_frequency
+        target["daily_times"] = new_times
+        _add_jobs_for_target(target)
 
 
 def update_all_smart_schedules():
