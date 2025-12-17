@@ -692,10 +692,9 @@ const toValueAndUnit = (minutes) => {
 const renderSchedule = (row) => {
   const mode = row.schedule_mode || "interval";
   if (mode === "smart") {
-    const freq = row.auto_frequency || "medium";
+    const freq = row.auto_frequency || "未知";
     const freqNames = { high: "高频", medium: "中频", low: "低频" };
-    const times = row.daily_times && row.daily_times.length ? row.daily_times.join(", ") : "自动";
-    return `智能(${freqNames[freq] || freq}) ${times}`;
+    return `智能调度 (${freqNames[freq] || freq})`;
   }
   if (mode === "daily" && row.daily_times && row.daily_times.length) {
     return `每日 ${row.daily_times.join(", ")}`;
