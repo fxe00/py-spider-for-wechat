@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from bson import ObjectId
+from datetime import datetime, timedelta
 
 from backend.db import get_db
 from backend.security import jwt_required
@@ -8,7 +9,32 @@ from backend.scheduler import trigger_target, refresh_jobs
 bp = Blueprint("targets", __name__, url_prefix="/api/targets")
 
 
+def _calc_auto_frequency(mp_name: str) -> str:
+    """计算公众号的发布频率等级"""
+    if not mp_name:
+        return "medium"
+    
+    db = get_db()
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    article_count = db["articles"].count_documents({
+        "mp_name": mp_name,
+        "publish_at": {"$gte": thirty_days_ago}
+    })
+    
+    if article_count >= 15:
+        return "high"
+    elif article_count >= 4:
+        return "medium"
+    else:
+        return "low"
+
+
 def _serialize(doc):
+    # 如果是智能调度模式但没有 auto_frequency，实时计算
+    auto_frequency = doc.get("auto_frequency")
+    if doc.get("schedule_mode") == "smart" and not auto_frequency:
+        auto_frequency = _calc_auto_frequency(doc.get("name"))
+    
     return {
         "id": str(doc["_id"]),
         "name": doc.get("name"),
@@ -32,6 +58,7 @@ def _serialize(doc):
         "mp_signature": doc.get("mp_signature"),
         "mp_user_name": doc.get("mp_user_name"),
         "last_error": doc.get("last_error"),
+        "auto_frequency": auto_frequency,
     }
 
 
